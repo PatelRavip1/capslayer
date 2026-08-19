@@ -46,8 +46,8 @@ static void print_usage(const char *prog_name)
     printf("Options:\n");
     printf("  -c, --config <path>     Specify path to config.json\n");
     printf("  -t, --test-config       Validate config file syntax and bindings, then exit\n");
-    printf("      --install           Install to 'C:\\Program Files\\capslayer' and enable startup\n");
-    printf("      --uninstall         Uninstall from 'C:\\Program Files\\capslayer' and remove startup\n");
+    printf("      --install           Install to 'C:\\Program Files (x86)\\capslayer' and enable startup\n");
+    printf("      --uninstall         Uninstall from 'C:\\Program Files (x86)\\capslayer' and remove startup\n");
     printf("      --enable-startup    Register Task Scheduler startup task (elevated at logon)\n");
     printf("      --disable-startup   Remove Task Scheduler startup task\n");
     printf("      --status            Show installation and startup configuration status\n");
@@ -315,14 +315,13 @@ static int run_app(HINSTANCE hInstance)
     g_app.single_instance_mutex = CreateMutexW(NULL, TRUE, MUTEX_NAME);
     if (GetLastError() == ERROR_ALREADY_EXISTS) {
         if (g_app.console_mode) {
-            printf("Error: Another instance of CapsLayer is already running.\n");
-        } else {
-            MessageBoxW(NULL, L"Another instance of CapsLayer is already running.", L"CapsLayer", MB_OK | MB_ICONWARNING);
+            printf("CapsLayer is already running.\n");
         }
         if (g_app.single_instance_mutex) {
             CloseHandle(g_app.single_instance_mutex);
+            g_app.single_instance_mutex = NULL;
         }
-        return 1;
+        return 0;
     }
 
     /* Register Window Class for message pump */
@@ -450,26 +449,69 @@ static bool run_command_hidden(const wchar_t *cmd)
     return (exit_code == 0);
 }
 
+static void get_install_base_path(wchar_t *buf, size_t buf_len)
+{
+    if (GetEnvironmentVariableW(L"ProgramFiles(x86)", buf, (DWORD)buf_len) != 0 && buf[0] != L'\0') {
+        return;
+    }
+    if (GetEnvironmentVariableW(L"ProgramFiles", buf, (DWORD)buf_len) != 0 && buf[0] != L'\0') {
+        return;
+    }
+    wcscpy_s(buf, buf_len, L"C:\\Program Files (x86)");
+}
+
 static bool setup_enable_startup(void)
 {
     wchar_t prog_files[MAX_PATH];
-    if (GetEnvironmentVariableW(L"ProgramFiles", prog_files, MAX_PATH) == 0) {
-        wcscpy_s(prog_files, MAX_PATH, L"C:\\Program Files");
+    get_install_base_path(prog_files, MAX_PATH);
+
+    wchar_t target_exe[MAX_PATH];
+    swprintf_s(target_exe, MAX_PATH, L"%s\\capslayer\\capslayer.exe", prog_files);
+
+    wchar_t target_dir[MAX_PATH];
+    swprintf_s(target_dir, MAX_PATH, L"%s\\capslayer", prog_files);
+
+    /* Clean up any legacy Registry Run keys or Startup folder shortcuts to avoid duplicate unelevated launches */
+    run_command_hidden(L"reg delete \"HKLM\\Software\\Microsoft\\Windows\\CurrentVersion\\Run\" /v \"CapsLayer\" /f");
+    run_command_hidden(L"reg delete \"HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run\" /v \"CapsLayer\" /f");
+    run_command_hidden(L"powershell -NoProfile -ExecutionPolicy Bypass -Command \""
+        L"$p1 = [System.IO.Path]::Combine($env:APPDATA, 'Microsoft\\Windows\\Start Menu\\Programs\\Startup\\CapsLayer.lnk'); "
+        L"$p2 = [System.IO.Path]::Combine($env:ProgramData, 'Microsoft\\Windows\\Start Menu\\Programs\\Startup\\CapsLayer.lnk'); "
+        L"Remove-Item -Path $p1, $p2 -Force -ErrorAction SilentlyContinue\"");
+
+    /* Register Task Scheduler task with Highest (Admin) privileges, full battery support, and no timeout */
+    wchar_t sch_cmd[2048];
+    swprintf_s(sch_cmd, sizeof(sch_cmd) / sizeof(wchar_t),
+        L"powershell -NoProfile -ExecutionPolicy Bypass -Command \""
+        L"$action = New-ScheduledTaskAction -Execute '%ls' -WorkingDirectory '%ls'; "
+        L"$trigger = New-ScheduledTaskTrigger -AtLogOn; "
+        L"$principal = New-ScheduledTaskPrincipal -GroupId 'BUILTIN\\Users' -RunLevel Highest; "
+        L"$settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit 0 -Priority 4 -MultipleInstances IgnoreNew; "
+        L"$task = New-ScheduledTask -Action $action -Trigger $trigger -Principal $principal -Settings $settings; "
+        L"Register-ScheduledTask -TaskName 'CapsLayer' -InputObject $task -Force\"",
+        target_exe, target_dir);
+    if (!run_command_hidden(sch_cmd)) {
+        wchar_t sch_fallback[1024];
+        swprintf_s(sch_fallback, sizeof(sch_fallback) / sizeof(wchar_t),
+            L"schtasks /Create /TN \"CapsLayer\" /TR \"\\\"%ls\\\"\" /SC ONLOGON /RL HIGHEST /F /DELAY 0000:00",
+            target_exe);
+        run_command_hidden(sch_fallback);
     }
 
-    wchar_t cmd[1024];
-    swprintf_s(cmd, sizeof(cmd) / sizeof(wchar_t),
-        L"schtasks /Create /TN \"CapsLayer\" /TR \"\\\"%s\\capslayer\\capslayer.exe\\\"\" /SC ONLOGON /RL HIGHEST /F /DELAY 0000:00",
-        prog_files);
-
-    return run_command_hidden(cmd);
+    return true;
 }
 
 static bool setup_disable_startup(void)
 {
-    return run_command_hidden(L"schtasks /Delete /TN \"CapsLayer\" /F");
+    run_command_hidden(L"schtasks /Delete /TN \"CapsLayer\" /F");
+    run_command_hidden(L"reg delete \"HKLM\\Software\\Microsoft\\Windows\\CurrentVersion\\Run\" /v \"CapsLayer\" /f");
+    run_command_hidden(L"reg delete \"HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run\" /v \"CapsLayer\" /f");
+    run_command_hidden(L"powershell -NoProfile -ExecutionPolicy Bypass -Command \""
+        L"$p1 = [System.IO.Path]::Combine($env:APPDATA, 'Microsoft\\Windows\\Start Menu\\Programs\\Startup\\CapsLayer.lnk'); "
+        L"$p2 = [System.IO.Path]::Combine($env:ProgramData, 'Microsoft\\Windows\\Start Menu\\Programs\\Startup\\CapsLayer.lnk'); "
+        L"Remove-Item -Path $p1, $p2 -Force -ErrorAction SilentlyContinue\"");
+    return true;
 }
-
 static bool setup_install(void)
 {
     wchar_t src_exe[MAX_PATH];
@@ -479,9 +521,7 @@ static bool setup_install(void)
     }
 
     wchar_t prog_files[MAX_PATH];
-    if (GetEnvironmentVariableW(L"ProgramFiles", prog_files, MAX_PATH) == 0) {
-        wcscpy_s(prog_files, MAX_PATH, L"C:\\Program Files");
-    }
+    get_install_base_path(prog_files, MAX_PATH);
 
     wchar_t target_dir[MAX_PATH];
     swprintf_s(target_dir, MAX_PATH, L"%s\\capslayer", prog_files);
@@ -535,18 +575,10 @@ static bool setup_install(void)
         L"icacls \"%ls\" /grant *S-1-5-32-545:(OI)(CI)M /T /Q", target_dir);
     run_command_hidden(acl_cmd);
 
-    /* Register Task Scheduler Startup Task */
-    printf("[5/6] Registering Windows Startup task (Task Scheduler)...\n");
-    if (setup_enable_startup()) {
-        printf("  - Task 'CapsLayer' created (Runs elevated on logon without UAC prompts)\n");
-    } else {
-        printf("  - [Warning] Task Scheduler failed; adding Registry Run key fallback\n");
-        wchar_t reg_cmd[1024];
-        swprintf_s(reg_cmd, sizeof(reg_cmd) / sizeof(wchar_t),
-            L"reg add \"HKLM\\Software\\Microsoft\\Windows\\CurrentVersion\\Run\" /v \"CapsLayer\" /t REG_SZ /d \"\\\"%ls\\\"\" /f", target_exe);
-        run_command_hidden(reg_cmd);
-    }
-
+    /* Register Multi-layer Windows Startup */
+    printf("[5/6] Registering Windows Startup (Registry, Startup Folder & Task Scheduler)...\n");
+    setup_enable_startup();
+    printf("  - Startup registered across Registry Run keys, Startup folder, and Task Scheduler\n");
     /* Create Start Menu Shortcut */
     printf("[6/6] Creating Start Menu shortcut & launching...\n");
     wchar_t sc_cmd[2048];
@@ -570,9 +602,7 @@ static bool setup_install(void)
 static bool setup_uninstall(void)
 {
     wchar_t prog_files[MAX_PATH];
-    if (GetEnvironmentVariableW(L"ProgramFiles", prog_files, MAX_PATH) == 0) {
-        wcscpy_s(prog_files, MAX_PATH, L"C:\\Program Files");
-    }
+    get_install_base_path(prog_files, MAX_PATH);
 
     wchar_t target_dir[MAX_PATH];
     swprintf_s(target_dir, MAX_PATH, L"%s\\capslayer", prog_files);
@@ -612,9 +642,7 @@ static bool setup_uninstall(void)
 static void setup_show_status(void)
 {
     wchar_t prog_files[MAX_PATH];
-    if (GetEnvironmentVariableW(L"ProgramFiles", prog_files, MAX_PATH) == 0) {
-        wcscpy_s(prog_files, MAX_PATH, L"C:\\Program Files");
-    }
+    get_install_base_path(prog_files, MAX_PATH);
 
     wchar_t target_exe[MAX_PATH];
     swprintf_s(target_exe, MAX_PATH, L"%s\\capslayer\\capslayer.exe", prog_files);
@@ -625,7 +653,7 @@ static void setup_show_status(void)
     printf("===================================================\n");
     printf("         CapsLayer Installation Status\n");
     printf("===================================================\n");
-    printf("  - Installation Directory : %s\\capslayer\n", "C:\\Program Files");
+    printf("  - Installation Directory : %ls\\capslayer\n", prog_files);
     printf("  - Executable Installed   : %s\n", (GetFileAttributesW(target_exe) != INVALID_FILE_ATTRIBUTES) ? "YES" : "NO");
     printf("  - Config File Present    : %s\n", (GetFileAttributesW(target_cfg) != INVALID_FILE_ATTRIBUTES) ? "YES" : "NO");
 
@@ -761,12 +789,6 @@ int main(int argc, char *argv[])
         }
     }
 
-    /* Auto-elevate to Administrator by default if not already elevated */
-    if (!g_app.no_elevate && !is_running_as_admin()) {
-        if (relaunch_as_admin(argc, argv)) {
-            return 0; /* Successfully spawned elevated process */
-        }
-    }
 
     if (g_app.console_mode) {
         attach_console_for_cli(true);

@@ -12,11 +12,6 @@
     "j": "left",
     "k": "down",
     "l": "right",
-    "h": "home",
-    ";": "end",
-    "u": "pageup",
-    "d": "pagedown",
-    "backspace": "delete",
     "m": "delete",
     "n": "backspace",
     "p": "toggle_persistent",
@@ -29,13 +24,13 @@
     }
   },
   "shortcuts": {
-    "win+alt+capslock": {
+    "win+alt+esc": {
       "action": "exec",
-      "command": "C:\\Windows\\System32\\shutdown.exe /s /t 0"
+      "command": "shutdown.exe /s /t 0"
     },
     "win+shift+i": {
       "action": "exec",
-      "command": "wt.exe"
+      "command": "C:\\titus.lnk"
     }
   }
 }

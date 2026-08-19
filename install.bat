@@ -1,2 +1,3 @@
 @echo off
-call "%~dp0setup.bat" %*
+cd /d "%~dp0"
+call setup.bat

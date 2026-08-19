@@ -26,7 +26,7 @@ It transforms the **CapsLock** key into a dual-role key:
   - Double-click tray icon to toggle pause/active.
   - Context menu for Reloading Config, Editing Config, Status, and Exiting.
 - **Windows Task Scheduler Startup**:
-  - Installs to `C:\Program Files\capslayer` and registers with Task Scheduler to run elevated at user logon with zero UAC prompts.
+  - Installs to `C:\Program Files (x86)\capslayer` and registers with Task Scheduler to run elevated at user logon with zero UAC prompts.
 - **Native Background Daemon**:
   - Runs quietly as a Windows GUI subsystem process (`IMAGE_SUBSYSTEM_WINDOWS_GUI`) without showing any console window.
 
@@ -40,11 +40,7 @@ It transforms the **CapsLock** key into a dual-role key:
 | **`J`** | **Left Arrow** (`←`) |
 | **`K`** | **Down Arrow** (`↓`) |
 | **`L`** | **Right Arrow** (`→`) |
-| **`H`** | **Home** |
-| **`;`** | **End** |
-| **`U`** | **Page Up** |
-| **`D`** | **Page Down** |
-| **`Backspace`** / **`M`** | **Delete** |
+| **`M`** | **Delete** |
 | **`N`** | **Backspace** |
 | **`P`** | **Toggle Persistent Layer Lock** |
 | **`W`** | **Alt + F4** (Close Window) |
@@ -52,11 +48,18 @@ It transforms the **CapsLock** key into a dual-role key:
 | **`V`** | **Ctrl + V** (Paste) |
 | **`Z`** | **Launch Windows Terminal** (`wt.exe`) |
 
+### Default Global Shortcuts
+
+| Shortcut | Action |
+| :--- | :--- |
+| **`Win + Alt + Esc`** | **Shutdown** (`shutdown.exe /s /t 0`) |
+| **`Win + Shift + I`** | **Launch Shortcut** (`C:\titus.lnk`) |
+
 ---
 
 ## Configuration (`config.json`)
 
-`config.json` resides next to `capslayer.exe` (or in `C:\Program Files\capslayer\config.json` after installation).
+`config.json` resides next to `capslayer.exe` (or in `C:\Program Files (x86)\capslayer\config.json` after installation).
 
 ```json
 {
@@ -73,11 +76,6 @@ It transforms the **CapsLock** key into a dual-role key:
     "j": "left",
     "k": "down",
     "l": "right",
-    "h": "home",
-    ";": "end",
-    "u": "pageup",
-    "d": "pagedown",
-    "backspace": "delete",
     "m": "delete",
     "n": "backspace",
     "p": "toggle_persistent",
@@ -90,13 +88,13 @@ It transforms the **CapsLock** key into a dual-role key:
     }
   },
   "shortcuts": {
-    "win+alt+capslock": {
+    "win+alt+esc": {
       "action": "exec",
-      "command": "C:\\Windows\\System32\\shutdown.exe /s /t 0"
+      "command": "shutdown.exe /s /t 0"
     },
     "win+shift+i": {
       "action": "exec",
-      "command": "wt.exe"
+      "command": "C:\\titus.lnk"
     }
   }
 }
@@ -118,17 +116,23 @@ It transforms the **CapsLock** key into a dual-role key:
 
 ## Installation & Setup
 
-### Automatic Setup
-Run `setup.bat` (or `install.bat`) as Administrator:
+### Automated Setup
+Run `setup.bat` (or `install.bat`) in Command Prompt, or run `setup.ps1` in PowerShell (automatically requests Administrator elevation if not already elevated):
 ```cmd
 setup.bat
 ```
-This will:
-1. Copy `capslayer.exe` and `config.json` to `C:\Program Files\capslayer`.
-2. Configure permissions for user configuration edits.
-3. Register a Windows Task Scheduler task (`CapsLayer`) to start elevated on user logon without UAC prompts.
-4. Add a shortcut to the Windows Start Menu.
-5. Launch the daemon in the background.
+Or via PowerShell:
+```powershell
+.\setup.ps1
+```
+
+This will automatically:
+1. Copy `capslayer.exe`, `config.json` (preserves existing if present), and `uninstall.bat` to `C:\Program Files (x86)\capslayer`.
+2. Configure file and folder permissions (`icacls` / ACL) so standard users can edit `config.json` without requiring administrator privileges.
+3. Register a Windows Task Scheduler task (`CapsLayer`) to start elevated on user logon with **zero UAC prompts**.
+4. Clean up any legacy registry Run entries or Startup folder shortcuts to avoid duplicate launches.
+5. Add a shortcut to the Windows Start Menu (`CapsLayer.lnk`).
+6. Launch the daemon in the background.
 
 ### Uninstallation
 Run `uninstall.bat` as Administrator:
@@ -139,8 +143,7 @@ Or via CLI:
 ```cmd
 capslayer.exe --uninstall
 ```
-
----
+This stops running processes, removes the Task Scheduler startup task, cleans Start Menu shortcuts and registry entries, and removes the installation folder.
 
 ## CLI Reference
 
@@ -152,8 +155,8 @@ Usage: capslayer.exe [options]
 Options:
   -c, --config <path>     Specify path to config.json
   -t, --test-config       Validate config file syntax and bindings, then exit
-      --install           Install to 'C:\Program Files\capslayer' and enable startup
-      --uninstall         Uninstall from 'C:\Program Files\capslayer' and remove startup
+      --install           Install to 'C:\Program Files (x86)\capslayer' and enable startup
+      --uninstall         Uninstall from 'C:\Program Files (x86)\capslayer' and remove startup
       --enable-startup    Register Task Scheduler startup task (elevated at logon)
       --disable-startup   Remove Task Scheduler startup task
       --status            Show installation and startup configuration status
