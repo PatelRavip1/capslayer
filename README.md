@@ -8,6 +8,8 @@ It transforms the **CapsLock** key into a dual-role key:
 - **CapsLock + P**: Toggles **Persistent Layer Lock** mode with visual tray feedback.
 - **Global Shortcuts**: Launch applications and execute commands asynchronously without blocking input.
 
+> 📖 **Looking for full internal architecture, file structure, and function-by-function call graphs?** Read **[DOCUMENTATION.md](DOCUMENTATION.md)**.
+
 ---
 
 ## Key Features
