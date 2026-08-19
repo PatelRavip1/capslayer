@@ -23,8 +23,7 @@ extern "C" {
 
 #define WM_TRAYICON            (WM_USER + 1)
 #define WM_USER_RELOAD_CONFIG  (WM_USER + 2)
-#define WM_USER_TOGGLE_PAUSE   (WM_USER + 3)
-#define WM_USER_STATE_CHANGED  (WM_USER + 4)
+#define WM_USER_STATE_CHANGED  (WM_USER + 3)
 
 #define IDM_STATUS             1001
 #define IDM_TOGGLE_ENABLE      1002
@@ -62,9 +61,11 @@ typedef struct {
 } global_shortcut_t;
 
 typedef struct {
+    WORD modifier_vk;
     bool swap_esc_and_capslock;
     bool capslock_tap_as_esc;
     bool esc_tap_as_capslock;
+    bool modifier_tap_as_esc;
     bool unmapped_passthrough;
     bool show_tray_icon;
     bool start_minimized;
@@ -72,6 +73,7 @@ typedef struct {
 
 typedef struct {
     config_settings_t settings;
+    WORD remap_map[256];
     layer_action_t layer_map[256];
     global_shortcut_t shortcuts[MAX_SHORTCUTS];
     uint8_t shortcut_count;

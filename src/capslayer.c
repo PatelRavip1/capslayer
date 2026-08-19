@@ -36,10 +36,19 @@ typedef struct jnode {
 } jnode_t;
 
 static const char *skip_ws(const char *s) {
-    while (*s && ((unsigned char)*s <= ' ' || *s == '/')) {
-        if (*s == '/' && s[1] == '/') { while (*s && *s != '\n') s++; }
-        else if (*s == '/' && s[1] == '*') { s += 2; while (*s && !(*s == '*' && s[1] == '/')) s++; if (*s) s += 2; }
-        else s++;
+    while (*s) {
+        if ((unsigned char)*s <= ' ') {
+            s++;
+        } else if (*s == '/' && s[1] == '/') {
+            s += 2;
+            while (*s && *s != '\n') s++;
+        } else if (*s == '/' && s[1] == '*') {
+            s += 2;
+            while (*s && !(*s == '*' && s[1] == '/')) s++;
+            if (*s) s += 2;
+        } else {
+            break;
+        }
     }
     return s;
 }
@@ -237,11 +246,19 @@ static const KeyMapping KEY_TABLE[] = {
     { "pagedown", VK_NEXT }, { "pgdn", VK_NEXT }, { "insert", VK_INSERT }, { "ins", VK_INSERT },
     { "delete", VK_DELETE }, { "del", VK_DELETE }, { "backspace", VK_BACK }, { "bksp", VK_BACK }, { "bs", VK_BACK },
     { "tab", VK_TAB }, { "enter", VK_RETURN }, { "return", VK_RETURN }, { "space", VK_SPACE }, { "spacebar", VK_SPACE },
-    { "escape", VK_ESCAPE }, { "esc", VK_ESCAPE }, { "capslock", VK_CAPITAL }, { "caps", VK_CAPITAL },
+    { "escape", VK_ESCAPE }, { "esc", VK_ESCAPE }, { "capslock", VK_CAPITAL }, { "caps", VK_CAPITAL }, { "caps_lock", VK_CAPITAL }, { "caps lock", VK_CAPITAL },
     { "ctrl", VK_CONTROL }, { "control", VK_CONTROL }, { "lctrl", VK_LCONTROL }, { "rctrl", VK_RCONTROL },
+    { "left_ctrl", VK_LCONTROL }, { "left ctrl", VK_LCONTROL }, { "leftctrl", VK_LCONTROL }, { "l_ctrl", VK_LCONTROL }, { "lcontrol", VK_LCONTROL }, { "l_control", VK_LCONTROL }, { "left control", VK_LCONTROL }, { "left_control", VK_LCONTROL },
+    { "right_ctrl", VK_RCONTROL }, { "right ctrl", VK_RCONTROL }, { "rightctrl", VK_RCONTROL }, { "r_ctrl", VK_RCONTROL }, { "rcontrol", VK_RCONTROL }, { "r_control", VK_RCONTROL }, { "right control", VK_RCONTROL }, { "right_control", VK_RCONTROL },
     { "alt", VK_MENU }, { "lalt", VK_LMENU }, { "ralt", VK_RMENU },
+    { "left_alt", VK_LMENU }, { "left alt", VK_LMENU }, { "leftalt", VK_LMENU }, { "l_alt", VK_LMENU }, { "lmenu", VK_LMENU }, { "l_menu", VK_LMENU }, { "left menu", VK_LMENU }, { "left_menu", VK_LMENU },
+    { "right_alt", VK_RMENU }, { "right alt", VK_RMENU }, { "rightalt", VK_RMENU }, { "r_alt", VK_RMENU }, { "rmenu", VK_RMENU }, { "r_menu", VK_RMENU }, { "right menu", VK_RMENU }, { "right_menu", VK_RMENU }, { "altgr", VK_RMENU }, { "alt_gr", VK_RMENU }, { "alt gr", VK_RMENU },
     { "shift", VK_SHIFT }, { "lshift", VK_LSHIFT }, { "rshift", VK_RSHIFT },
+    { "left_shift", VK_LSHIFT }, { "left shift", VK_LSHIFT }, { "leftshift", VK_LSHIFT }, { "l_shift", VK_LSHIFT },
+    { "right_shift", VK_RSHIFT }, { "right shift", VK_RSHIFT }, { "rightshift", VK_RSHIFT }, { "r_shift", VK_RSHIFT },
     { "win", VK_LWIN }, { "lwin", VK_LWIN }, { "rwin", VK_RWIN }, { "super", VK_LWIN },
+    { "left_win", VK_LWIN }, { "left win", VK_LWIN }, { "leftwin", VK_LWIN }, { "l_win", VK_LWIN },
+    { "right_win", VK_RWIN }, { "right win", VK_RWIN }, { "rightwin", VK_RWIN }, { "r_win", VK_RWIN },
     { "volume_up", VK_VOLUME_UP }, { "volume_down", VK_VOLUME_DOWN }, { "volumedown", VK_VOLUME_DOWN },
     { "mute", VK_VOLUME_MUTE }, { "volume_mute", VK_VOLUME_MUTE },
     { "play_pause", VK_MEDIA_PLAY_PAUSE }, { "playpause", VK_MEDIA_PLAY_PAUSE },
@@ -280,9 +297,9 @@ WORD key_name_to_vk(const char *name) {
         if (_stricmp(name, KEY_TABLE[i].name) == 0) return KEY_TABLE[i].vk;
     }
     int wlen = MultiByteToWideChar(CP_UTF8, 0, name, -1, NULL, 0);
-    if (wlen > 1 && wlen < 16) {
-        wchar_t wbuf[16];
-        MultiByteToWideChar(CP_UTF8, 0, name, -1, wbuf, wlen);
+    if (wlen == 2) {
+        wchar_t wbuf[2];
+        MultiByteToWideChar(CP_UTF8, 0, name, -1, wbuf, 2);
         SHORT res = VkKeyScanW(wbuf[0]);
         if (res != -1) return (WORD)(res & 0xFF);
     }
@@ -316,12 +333,32 @@ bool is_modifier_key(WORD vk) {
     }
 }
 
+static inline bool is_modifier_match(WORD key_vk, WORD target_vk, DWORD flags) {
+    if (!key_vk || !target_vk) return false;
+    if (key_vk == target_vk) return true;
+    if (target_vk == VK_MENU)
+        return (key_vk == VK_MENU || key_vk == VK_LMENU || key_vk == VK_RMENU);
+    if (target_vk == VK_RMENU)
+        return (key_vk == VK_RMENU || (key_vk == VK_MENU && (flags & LLKHF_EXTENDED)));
+    if (target_vk == VK_LMENU)
+        return (key_vk == VK_LMENU || (key_vk == VK_MENU && !(flags & LLKHF_EXTENDED)));
+    if (target_vk == VK_CONTROL)
+        return (key_vk == VK_CONTROL || key_vk == VK_LCONTROL || key_vk == VK_RCONTROL);
+    if (target_vk == VK_RCONTROL)
+        return (key_vk == VK_RCONTROL || (key_vk == VK_CONTROL && (flags & LLKHF_EXTENDED)));
+    if (target_vk == VK_LCONTROL)
+        return (key_vk == VK_LCONTROL || (key_vk == VK_CONTROL && !(flags & LLKHF_EXTENDED)));
+    if (target_vk == VK_SHIFT)
+        return (key_vk == VK_SHIFT || key_vk == VK_LSHIFT || key_vk == VK_RSHIFT);
+    return false;
+}
+
 bool is_modifier_down(WORD vk) {
-    if (vk == VK_SHIFT || vk == VK_LSHIFT || vk == VK_RSHIFT)
+    if (vk == VK_SHIFT)
         return ((GetAsyncKeyState(VK_SHIFT) | GetAsyncKeyState(VK_LSHIFT) | GetAsyncKeyState(VK_RSHIFT)) & 0x8000) != 0;
-    if (vk == VK_CONTROL || vk == VK_LCONTROL || vk == VK_RCONTROL)
+    if (vk == VK_CONTROL)
         return ((GetAsyncKeyState(VK_CONTROL) | GetAsyncKeyState(VK_LCONTROL) | GetAsyncKeyState(VK_RCONTROL)) & 0x8000) != 0;
-    if (vk == VK_MENU || vk == VK_LMENU || vk == VK_RMENU)
+    if (vk == VK_MENU)
         return ((GetAsyncKeyState(VK_MENU) | GetAsyncKeyState(VK_LMENU) | GetAsyncKeyState(VK_RMENU)) & 0x8000) != 0;
     if (vk == VK_LWIN || vk == VK_RWIN)
         return ((GetAsyncKeyState(VK_LWIN) | GetAsyncKeyState(VK_RWIN)) & 0x8000) != 0;
@@ -376,9 +413,6 @@ void send_key_combo(const WORD *vks, size_t count) {
 static unsigned __stdcall async_exec_worker(void *arg) {
     wchar_t *cmd = (wchar_t *)arg;
     if (cmd) {
-        if (_wcsicmp(cmd, L"shutdown.exe") == 0 || _wcsicmp(cmd, L"shutdown") == 0) {
-            wcscpy_s(cmd, 1024, L"shutdown.exe /s /t 0");
-        }
         STARTUPINFOW si = { .cb = sizeof(si) };
         PROCESS_INFORMATION pi;
         if (!CreateProcessW(NULL, cmd, NULL, NULL, FALSE, CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {
@@ -397,9 +431,10 @@ void spawn_process_async(const char *cmd_utf8) {
     if (!cmd_utf8 || !*cmd_utf8) return;
     int len = MultiByteToWideChar(CP_UTF8, 0, cmd_utf8, -1, NULL, 0);
     if (len <= 0) return;
-    wchar_t *wcmd = (wchar_t *)malloc(max(len, 1024) * sizeof(wchar_t));
+    wchar_t *wcmd = (wchar_t *)malloc((len + 1) * sizeof(wchar_t));
     if (!wcmd) return;
     MultiByteToWideChar(CP_UTF8, 0, cmd_utf8, -1, wcmd, len);
+    wcmd[len] = L'\0';
     uintptr_t th = _beginthreadex(NULL, 0, async_exec_worker, wcmd, 0, NULL);
     if (th) CloseHandle((HANDLE)th);
     else free(wcmd);
@@ -494,53 +529,22 @@ static bool parse_layer_action_node(const jnode_t *node, layer_action_t *action)
         if (!tgt_str) tgt_str = jget_str(node, "key");
         jnode_t *keys_arr = jget(node, "keys");
 
-        if (act_str) {
-            if (is_toggle_persistent_name(act_str)) {
-                action->type = ACTION_TOGGLE_PERSISTENT;
-                return true;
-            }
-            if (_stricmp(act_str, "exec") == 0 || _stricmp(act_str, "launch") == 0) {
-                if (cmd_str) {
-                    action->type = ACTION_EXEC;
-                    strncpy_s(action->data.command, MAX_COMMAND_LEN, cmd_str, _TRUNCATE);
-                    return true;
-                }
-            } else if (_stricmp(act_str, "combo") == 0) {
-                if (keys_arr) return parse_layer_action_node(keys_arr, action);
-                if (tgt_str) return parse_combo_str(tgt_str, action);
-            } else if (_stricmp(act_str, "key") == 0 || _stricmp(act_str, "remap") == 0) {
-                if (tgt_str) {
-                    if (is_toggle_persistent_name(tgt_str)) {
-                        action->type = ACTION_TOGGLE_PERSISTENT;
-                        return true;
-                    }
-                    WORD vk = key_name_to_vk(tgt_str);
-                    if (vk) {
-                        action->type = ACTION_KEY;
-                        action->data.target_vk = vk;
-                        return true;
-                    }
-                }
-            } else {
-                WORD vk = key_name_to_vk(act_str);
-                if (vk) {
-                    action->type = ACTION_KEY;
-                    action->data.target_vk = vk;
-                    return true;
-                }
-            }
+        if (act_str && is_toggle_persistent_name(act_str)) {
+            action->type = ACTION_TOGGLE_PERSISTENT;
+            return true;
         }
-
+        if (tgt_str && is_toggle_persistent_name(tgt_str)) {
+            action->type = ACTION_TOGGLE_PERSISTENT;
+            return true;
+        }
         if (cmd_str) {
             action->type = ACTION_EXEC;
             strncpy_s(action->data.command, MAX_COMMAND_LEN, cmd_str, _TRUNCATE);
             return true;
         }
+        if (keys_arr) return parse_layer_action_node(keys_arr, action);
         if (tgt_str) {
-            if (is_toggle_persistent_name(tgt_str)) {
-                action->type = ACTION_TOGGLE_PERSISTENT;
-                return true;
-            }
+            if (strchr(tgt_str, '+')) return parse_combo_str(tgt_str, action);
             WORD vk = key_name_to_vk(tgt_str);
             if (vk) {
                 action->type = ACTION_KEY;
@@ -548,9 +552,36 @@ static bool parse_layer_action_node(const jnode_t *node, layer_action_t *action)
                 return true;
             }
         }
-        if (keys_arr) return parse_layer_action_node(keys_arr, action);
+        if (act_str) {
+            WORD vk = key_name_to_vk(act_str);
+            if (vk) {
+                action->type = ACTION_KEY;
+                action->data.target_vk = vk;
+                return true;
+            }
+        }
     }
     return false;
+}
+
+static bool resolve_shortcut_tokens(const WORD *toks, uint8_t count, global_shortcut_t *sc) {
+    if (!toks || count == 0 || !sc) return false;
+    int non_mod = -1;
+    for (int i = (int)count - 1; i >= 0; i--) {
+        if (!is_modifier_key(toks[i])) { non_mod = i; break; }
+    }
+    if (non_mod >= 0) {
+        sc->trigger_vk = toks[non_mod];
+        for (uint8_t i = 0; i < count; i++) {
+            if ((int)i != non_mod && sc->mod_count < MAX_SHORTCUT_MODIFIERS)
+                sc->modifiers[sc->mod_count++] = toks[i];
+        }
+    } else {
+        sc->trigger_vk = toks[count - 1];
+        for (uint8_t i = 0; i < count - 1 && sc->mod_count < MAX_SHORTCUT_MODIFIERS; i++)
+            sc->modifiers[sc->mod_count++] = toks[i];
+    }
+    return (sc->trigger_vk != 0);
 }
 
 static bool parse_shortcut_combo(const char *combo_str, global_shortcut_t *sc) {
@@ -573,36 +604,52 @@ static bool parse_shortcut_combo(const char *combo_str, global_shortcut_t *sc) {
         }
         tok = strtok_s(NULL, "+", &ctx);
     }
-    if (!count) return false;
-    int non_mod = -1;
-    for (int i = (int)count - 1; i >= 0; i--) {
-        if (!is_modifier_key(toks[i])) { non_mod = i; break; }
-    }
-    if (non_mod >= 0) {
-        sc->trigger_vk = toks[non_mod];
-        for (uint8_t i = 0; i < count; i++) {
-            if ((int)i != non_mod && sc->mod_count < MAX_SHORTCUT_MODIFIERS)
-                sc->modifiers[sc->mod_count++] = toks[i];
+    return resolve_shortcut_tokens(toks, count, sc);
+}
+
+static bool is_known_setting_key(const char *k) {
+    if (!k) return true;
+    return (_stricmp(k, "modifier_key") == 0 || _stricmp(k, "modifier") == 0 ||
+            _stricmp(k, "layer_modifier") == 0 || _stricmp(k, "layer_key") == 0 ||
+            _stricmp(k, "swap_esc_and_capslock") == 0 || _stricmp(k, "capslock_tap_as_esc") == 0 ||
+            _stricmp(k, "esc_tap_as_capslock") == 0 || _stricmp(k, "modifier_tap_as_esc") == 0 ||
+            _stricmp(k, "unmapped_passthrough") == 0 || _stricmp(k, "show_tray_icon") == 0 ||
+            _stricmp(k, "start_minimized") == 0 || _stricmp(k, "settings") == 0 ||
+            _stricmp(k, "layer") == 0 || _stricmp(k, "mappings") == 0 ||
+            _stricmp(k, "layer_mappings") == 0 || _stricmp(k, "bindings") == 0 ||
+            _stricmp(k, "shortcuts") == 0 || _stricmp(k, "hotkeys") == 0 ||
+            _stricmp(k, "global") == 0 || _stricmp(k, "programs") == 0 ||
+            _stricmp(k, "remap") == 0 || _stricmp(k, "remaps") == 0 ||
+            _stricmp(k, "keys") == 0 || _stricmp(k, "remapping") == 0 ||
+            _stricmp(k, "remappings") == 0 || _stricmp(k, "key_remaps") == 0);
+}
+
+static void parse_remap_pairs(const jnode_t *obj, WORD remap_map[256], bool check_known) {
+    if (!obj || obj->type != JSON_OBJECT) return;
+    for (size_t i = 0; i < obj->obj.count; i++) {
+        const char *k = obj->obj.pairs[i].key;
+        if (!k || (check_known && is_known_setting_key(k))) continue;
+        if (obj->obj.pairs[i].type == JSON_STRING) {
+            WORD s_vk = key_name_to_vk(k);
+            WORD d_vk = key_name_to_vk(obj->obj.pairs[i].str);
+            if (s_vk > 0 && s_vk < 256 && d_vk > 0) {
+                remap_map[s_vk] = d_vk;
+            }
         }
-    } else {
-        sc->trigger_vk = toks[count - 1];
-        for (uint8_t i = 0; i < count - 1; i++) {
-            if (sc->mod_count < MAX_SHORTCUT_MODIFIERS)
-                sc->modifiers[sc->mod_count++] = toks[i];
-        }
     }
-    return (sc->trigger_vk != 0);
 }
 
 void config_init_defaults(capslayer_config_t *cfg) {
     if (!cfg) return;
     memset(cfg, 0, sizeof(*cfg));
+    cfg->settings.modifier_vk = VK_CAPITAL;
     cfg->settings.swap_esc_and_capslock = false;
     cfg->settings.capslock_tap_as_esc = true;
     cfg->settings.esc_tap_as_capslock = true;
+    cfg->settings.modifier_tap_as_esc = false;
     cfg->settings.unmapped_passthrough = true;
     cfg->settings.show_tray_icon = true;
-
+    cfg->settings.start_minimized = false;
     WORD vk_i = key_name_to_vk("i"), vk_j = key_name_to_vk("j"), vk_k = key_name_to_vk("k"), vk_l = key_name_to_vk("l");
     if (vk_i < 256) { cfg->layer_map[vk_i].type = ACTION_KEY; cfg->layer_map[vk_i].data.target_vk = VK_UP; }
     if (vk_j < 256) { cfg->layer_map[vk_j].type = ACTION_KEY; cfg->layer_map[vk_j].data.target_vk = VK_LEFT; }
@@ -659,19 +706,61 @@ bool config_load_from_json_string(const char *json_str, capslayer_config_t *cfg)
 
     jnode_t *st = jget(&root, "settings");
     if (st && st->type == JSON_OBJECT) {
+        const char *mod_str = jget_str(st, "modifier_key");
+        if (!mod_str) mod_str = jget_str(st, "modifier");
+        if (!mod_str) mod_str = jget_str(st, "layer_modifier");
+        if (!mod_str) mod_str = jget_str(st, "layer_key");
+        if (mod_str) {
+            WORD mvk = key_name_to_vk(mod_str);
+            if (mvk > 0) cfg->settings.modifier_vk = mvk;
+        }
         cfg->settings.swap_esc_and_capslock = jget_bool(st, "swap_esc_and_capslock", cfg->settings.swap_esc_and_capslock);
         cfg->settings.capslock_tap_as_esc = jget_bool(st, "capslock_tap_as_esc", cfg->settings.capslock_tap_as_esc);
         cfg->settings.esc_tap_as_capslock = jget_bool(st, "esc_tap_as_capslock", cfg->settings.esc_tap_as_capslock);
+        cfg->settings.modifier_tap_as_esc = jget_bool(st, "modifier_tap_as_esc", cfg->settings.modifier_tap_as_esc);
         cfg->settings.unmapped_passthrough = jget_bool(st, "unmapped_passthrough", cfg->settings.unmapped_passthrough);
         cfg->settings.show_tray_icon = jget_bool(st, "show_tray_icon", cfg->settings.show_tray_icon);
         cfg->settings.start_minimized = jget_bool(st, "start_minimized", cfg->settings.start_minimized);
+
+        parse_remap_pairs(st, cfg->remap_map, true);
+    }
+
+    const char *top_mod = jget_str(&root, "modifier_key");
+    if (!top_mod) top_mod = jget_str(&root, "modifier");
+    if (!top_mod) top_mod = jget_str(&root, "layer_modifier");
+    if (!top_mod) top_mod = jget_str(&root, "layer_key");
+    if (top_mod) {
+        WORD mvk = key_name_to_vk(top_mod);
+        if (mvk > 0) cfg->settings.modifier_vk = mvk;
+    }
+
+    jnode_t *remaps = jget(&root, "remap");
+    if (!remaps) remaps = jget(&root, "remaps");
+    if (!remaps) remaps = jget(&root, "keys");
+    if (!remaps) remaps = jget(&root, "remapping");
+    if (!remaps) remaps = jget(&root, "remappings");
+    if (!remaps) remaps = jget(&root, "key_remaps");
+    if (remaps) parse_remap_pairs(remaps, cfg->remap_map, false);
+
+    parse_remap_pairs(&root, cfg->remap_map, true);
+
+    if (cfg->settings.swap_esc_and_capslock) {
+        cfg->remap_map[VK_CAPITAL] = VK_ESCAPE;
+        cfg->remap_map[VK_ESCAPE] = VK_CAPITAL;
+    }
+    if (cfg->settings.capslock_tap_as_esc && cfg->settings.modifier_vk != VK_CAPITAL) {
+        if (cfg->remap_map[VK_CAPITAL] == 0) {
+            cfg->remap_map[VK_CAPITAL] = VK_ESCAPE;
+        }
+    }
+    if (cfg->settings.esc_tap_as_capslock) {
+        if (cfg->remap_map[VK_ESCAPE] == 0) {
+            cfg->remap_map[VK_ESCAPE] = VK_CAPITAL;
+        }
     }
 
     jnode_t *layer = jget(&root, "layer");
     if (!layer) layer = jget(&root, "mappings");
-    if (!layer) layer = jget(&root, "layer_mappings");
-    if (!layer) layer = jget(&root, "bindings");
-
     if (layer && layer->type == JSON_OBJECT) {
         for (size_t i = 0; i < layer->obj.count; i++) {
             const char *kname = layer->obj.pairs[i].key;
@@ -681,6 +770,12 @@ bool config_load_from_json_string(const char *json_str, capslayer_config_t *cfg)
                 layer_action_t act;
                 if (parse_layer_action_node(&layer->obj.pairs[i], &act)) {
                     cfg->layer_map[vk] = act;
+                    if (vk == VK_CAPITAL && act.type == ACTION_KEY && act.data.target_vk == VK_ESCAPE) {
+                        if (cfg->remap_map[VK_CAPITAL] == 0) cfg->remap_map[VK_CAPITAL] = VK_ESCAPE;
+                    }
+                    if (vk == VK_ESCAPE && act.type == ACTION_KEY && act.data.target_vk == VK_CAPITAL) {
+                        if (cfg->remap_map[VK_ESCAPE] == 0) cfg->remap_map[VK_ESCAPE] = VK_CAPITAL;
+                    }
                 }
             }
         }
@@ -719,23 +814,7 @@ bool config_load_from_json_string(const char *json_str, capslayer_config_t *cfg)
                             if (vk) toks[kcount++] = vk;
                         }
                     }
-                    if (kcount > 0) {
-                        int non_mod = -1;
-                        for (int k = (int)kcount - 1; k >= 0; k--) {
-                            if (!is_modifier_key(toks[k])) { non_mod = k; break; }
-                        }
-                        if (non_mod >= 0) {
-                            sc.trigger_vk = toks[non_mod];
-                            for (uint8_t k = 0; k < kcount; k++) {
-                                if ((int)k != non_mod && sc.mod_count < MAX_SHORTCUT_MODIFIERS)
-                                    sc.modifiers[sc.mod_count++] = toks[k];
-                            }
-                        } else {
-                            sc.trigger_vk = toks[kcount - 1];
-                            for (uint8_t k = 0; k < kcount - 1 && sc.mod_count < MAX_SHORTCUT_MODIFIERS; k++)
-                                sc.modifiers[sc.mod_count++] = toks[k];
-                        }
-                    }
+                    resolve_shortcut_tokens(toks, kcount, &sc);
                 } else {
                     const char *cstr = jget_str(item, "combo");
                     if (!cstr) cstr = jget_str(item, "shortcut");
@@ -814,10 +893,10 @@ static HANDLE g_blink_thread = NULL;
 static HANDLE g_stop_blink_event = NULL;
 static bool g_init_caps_state = false;
 
-static bool g_capslock_down = false;
-static bool g_capslock_layer_used = false;
+static bool g_layer_mod_down = false;
+static bool g_layer_mod_used = false;
+static bool g_layer_mod_passthrough_down = false;
 static WORD g_active_injected[256] = { 0 };
-
 static void init_cs_once(void) {
     if (!g_cs_init) { InitializeCriticalSection(&g_config_cs); g_cs_init = true; }
 }
@@ -830,12 +909,6 @@ void hook_update_config(const capslayer_config_t *cfg) {
     LeaveCriticalSection(&g_config_cs);
 }
 
-static void get_config_snapshot(capslayer_config_t *out) {
-    init_cs_once();
-    EnterCriticalSection(&g_config_cs);
-    *out = g_active_config;
-    LeaveCriticalSection(&g_config_cs);
-}
 
 bool hook_is_installed(void) { return (g_hook_handle != NULL); }
 bool hook_is_paused(void) { return g_paused; }
@@ -887,8 +960,13 @@ void hook_set_paused(bool paused) {
     if (paused) {
         stop_blinker();
         release_injected_keys();
-        g_capslock_down = false;
-        g_capslock_layer_used = false;
+        if (g_layer_mod_passthrough_down) {
+            WORD mod_vk = g_active_config.settings.modifier_vk ? g_active_config.settings.modifier_vk : VK_CAPITAL;
+            send_key_event(mod_vk, false);
+            g_layer_mod_passthrough_down = false;
+        }
+        g_layer_mod_down = false;
+        g_layer_mod_used = false;
         g_persistent_layer = false;
     }
     if (g_state_cb) g_state_cb(g_paused, g_persistent_layer);
@@ -909,6 +987,18 @@ bool hook_toggle_persistent_layer(void) {
 
 void hook_set_state_callback(layer_state_callback_t cb) { g_state_cb = cb; }
 
+static inline bool handle_key_remap(WORD vk, bool is_down, bool is_up, WORD tgt) {
+    if (is_down) {
+        g_active_injected[vk] = tgt;
+        send_key_event(tgt, true);
+    } else if (is_up) {
+        WORD active_vk = g_active_injected[vk] ? g_active_injected[vk] : tgt;
+        g_active_injected[vk] = 0;
+        send_key_event(active_vk, false);
+    }
+    return true;
+}
+
 LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
     if (nCode != HC_ACTION) return CallNextHookEx(g_hook_handle, nCode, wParam, lParam);
     KBDLLHOOKSTRUCT *kbd = (KBDLLHOOKSTRUCT *)lParam;
@@ -920,19 +1010,20 @@ LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
     bool is_up = (wParam == WM_KEYUP || wParam == WM_SYSKEYUP);
     WORD vk = (WORD)(kbd->vkCode & 0xFF);
 
-    capslayer_config_t cfg;
-    get_config_snapshot(&cfg);
+    const capslayer_config_t *cfg = &g_active_config;
+    WORD mod_vk = cfg->settings.modifier_vk ? cfg->settings.modifier_vk : VK_CAPITAL;
+    bool is_mod_key = is_modifier_match(vk, mod_vk, kbd->flags);
 
     /* 1. Global Shortcuts */
-    for (uint8_t i = 0; i < cfg.shortcut_count; ++i) {
-        const global_shortcut_t *sc = &cfg.shortcuts[i];
-        if (sc->trigger_vk == vk) {
+    for (uint8_t i = 0; i < cfg->shortcut_count; ++i) {
+        const global_shortcut_t *sc = &cfg->shortcuts[i];
+        if (sc->trigger_vk == vk || (is_mod_key && sc->trigger_vk == mod_vk)) {
             bool all_mods = true;
             for (uint8_t m = 0; m < sc->mod_count; ++m) {
                 if (!is_modifier_down(sc->modifiers[m])) { all_mods = false; break; }
             }
             if (all_mods) {
-                if (vk == VK_CAPITAL) g_capslock_layer_used = true;
+                if (is_mod_key || g_layer_mod_down) g_layer_mod_used = true;
                 if (is_down) {
                     switch (sc->action.type) {
                         case ACTION_EXEC: spawn_process_async(sc->action.data.command); break;
@@ -947,63 +1038,72 @@ LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
         }
     }
 
-    /* 2. Physical Escape */
-    if (vk == VK_ESCAPE) {
-        if (g_persistent_layer) {
-            if (is_down) hook_set_persistent_layer(false);
-            return 1;
-        }
-        if (cfg.settings.swap_esc_and_capslock || cfg.settings.esc_tap_as_capslock) {
-            if (is_down) send_key_tap(VK_CAPITAL);
-            return 1;
-        }
-        return CallNextHookEx(g_hook_handle, nCode, wParam, lParam);
-    }
-
-    /* 3. Physical CapsLock */
-    if (vk == VK_CAPITAL) {
+    /* 2. Layer Modifier Key */
+    if (is_mod_key) {
         if (is_down) {
-            if (!g_capslock_down) { g_capslock_down = true; g_capslock_layer_used = false; }
+            if (!g_layer_mod_down) {
+                g_layer_mod_down = true;
+                g_layer_mod_used = false;
+                g_layer_mod_passthrough_down = false;
+            }
             return 1;
         } else if (is_up) {
-            g_capslock_down = false;
+            g_layer_mod_down = false;
             release_injected_keys();
-            if (!g_capslock_layer_used && (cfg.settings.capslock_tap_as_esc || cfg.settings.swap_esc_and_capslock)) {
-                send_key_tap(VK_ESCAPE);
+            if (g_layer_mod_passthrough_down) {
+                send_key_event(mod_vk, false);
+                g_layer_mod_passthrough_down = false;
+            } else if (!g_layer_mod_used) {
+                if (mod_vk == VK_CAPITAL) {
+                    if (cfg->settings.capslock_tap_as_esc || cfg->settings.swap_esc_and_capslock || cfg->settings.modifier_tap_as_esc || cfg->remap_map[VK_CAPITAL] == VK_ESCAPE) {
+                        send_key_tap(VK_ESCAPE);
+                    } else if (cfg->remap_map[VK_CAPITAL] > 0) {
+                        send_key_tap(cfg->remap_map[VK_CAPITAL]);
+                    } else {
+                        send_key_tap(VK_CAPITAL);
+                    }
+                } else {
+                    if (cfg->settings.modifier_tap_as_esc) {
+                        send_key_tap(VK_ESCAPE);
+                    } else if (cfg->remap_map[mod_vk] > 0) {
+                        send_key_tap(cfg->remap_map[mod_vk]);
+                    } else {
+                        send_key_tap(mod_vk);
+                    }
+                }
             }
             return 1;
         }
     }
 
-    /* 4. Layer Navigation & Remapping */
-    bool layer_active = g_capslock_down || g_persistent_layer;
+    /* 3. Layer Navigation & Remapping */
+    bool layer_active = g_layer_mod_down || g_persistent_layer;
     if (layer_active) {
-        const layer_action_t *act = &cfg.layer_map[vk];
-        if (act->type == ACTION_TOGGLE_PERSISTENT || (g_capslock_down && vk == 0x50)) {
-            if (g_capslock_down) g_capslock_layer_used = true;
+        if (g_persistent_layer && (vk == VK_ESCAPE || (vk == VK_CAPITAL && cfg->remap_map[vk] == VK_ESCAPE))) {
+            if (is_down) hook_set_persistent_layer(false);
+            return 1;
+        }
+
+        const layer_action_t *act = &cfg->layer_map[vk];
+        if (act->type == ACTION_TOGGLE_PERSISTENT || (g_layer_mod_down && vk == 0x50)) {
+            if (g_layer_mod_down) g_layer_mod_used = true;
             if (is_down) hook_toggle_persistent_layer();
             return 1;
         }
 
         switch (act->type) {
             case ACTION_KEY: {
-                if (g_capslock_down) g_capslock_layer_used = true;
-                WORD tgt = act->data.target_vk;
-                if (is_down) { g_active_injected[vk] = tgt; send_key_event(tgt, true); }
-                else if (is_up) {
-                    WORD active_vk = g_active_injected[vk] ? g_active_injected[vk] : tgt;
-                    g_active_injected[vk] = 0;
-                    send_key_event(active_vk, false);
-                }
+                if (g_layer_mod_down) g_layer_mod_used = true;
+                handle_key_remap(vk, is_down, is_up, act->data.target_vk);
                 return 1;
             }
             case ACTION_COMBO: {
-                if (g_capslock_down) g_capslock_layer_used = true;
+                if (g_layer_mod_down) g_layer_mod_used = true;
                 if (is_down) send_key_combo(act->data.combo.vks, act->data.combo.count);
                 return 1;
             }
             case ACTION_EXEC: {
-                if (g_capslock_down) g_capslock_layer_used = true;
+                if (g_layer_mod_down) g_layer_mod_used = true;
                 if (is_down) spawn_process_async(act->data.command);
                 return 1;
             }
@@ -1013,7 +1113,28 @@ LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
                     g_active_injected[vk] = 0;
                     return 1;
                 }
-                if (cfg.settings.unmapped_passthrough) return CallNextHookEx(g_hook_handle, nCode, wParam, lParam);
+                if (g_layer_mod_down) {
+                    g_layer_mod_used = true;
+                    if (cfg->settings.unmapped_passthrough) {
+                        if (is_modifier_key(mod_vk) && !g_layer_mod_passthrough_down) {
+                            send_key_event(mod_vk, true);
+                            g_layer_mod_passthrough_down = true;
+                        }
+                        if (cfg->remap_map[vk] > 0) {
+                            handle_key_remap(vk, is_down, is_up, cfg->remap_map[vk]);
+                            return 1;
+                        }
+                        return CallNextHookEx(g_hook_handle, nCode, wParam, lParam);
+                    }
+                    return 1;
+                }
+                if (cfg->settings.unmapped_passthrough) {
+                    if (cfg->remap_map[vk] > 0) {
+                        handle_key_remap(vk, is_down, is_up, cfg->remap_map[vk]);
+                        return 1;
+                    }
+                    return CallNextHookEx(g_hook_handle, nCode, wParam, lParam);
+                }
                 return 1;
             }
         }
@@ -1021,6 +1142,10 @@ LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
         if (is_up && g_active_injected[vk]) {
             send_key_event(g_active_injected[vk], false);
             g_active_injected[vk] = 0;
+            return 1;
+        }
+        if (cfg->remap_map[vk] > 0) {
+            handle_key_remap(vk, is_down, is_up, cfg->remap_map[vk]);
             return 1;
         }
     }
@@ -1037,11 +1162,27 @@ bool hook_install(HINSTANCE hInstance) {
 
 void hook_uninstall(void) {
     stop_blinker();
-    if (g_hook_handle) { UnhookWindowsHookEx(g_hook_handle); g_hook_handle = NULL; }
+    if (g_stop_blink_event) {
+        CloseHandle(g_stop_blink_event);
+        g_stop_blink_event = NULL;
+    }
+    if (g_hook_handle) {
+        UnhookWindowsHookEx(g_hook_handle);
+        g_hook_handle = NULL;
+    }
     release_injected_keys();
-    g_capslock_down = false;
-    g_capslock_layer_used = false;
+    if (g_layer_mod_passthrough_down) {
+        WORD mod_vk = g_active_config.settings.modifier_vk ? g_active_config.settings.modifier_vk : VK_CAPITAL;
+        send_key_event(mod_vk, false);
+        g_layer_mod_passthrough_down = false;
+    }
+    g_layer_mod_down = false;
+    g_layer_mod_used = false;
     g_persistent_layer = false;
+    if (g_cs_init) {
+        DeleteCriticalSection(&g_config_cs);
+        g_cs_init = false;
+    }
 }
 
 /* ========================================================================= */
@@ -1229,8 +1370,8 @@ static bool relaunch_admin(int argc, char *argv[]) {
 static bool setup_enable_startup(void) {
     wchar_t pf[MAX_PATH], dir[MAX_PATH], exe[MAX_PATH];
     get_prog_files(pf, MAX_PATH);
-    swprintf_s(dir, MAX_PATH, L"%s\\capslayer", pf);
-    swprintf_s(exe, MAX_PATH, L"%s\\capslayer.exe", dir);
+    swprintf_s(dir, MAX_PATH, L"%ls\\capslayer", pf);
+    swprintf_s(exe, MAX_PATH, L"%ls\\capslayer.exe", dir);
     run_cmd_hidden(L"reg delete \"HKLM\\Software\\Microsoft\\Windows\\CurrentVersion\\Run\" /v \"CapsLayer\" /f");
     run_cmd_hidden(L"reg delete \"HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run\" /v \"CapsLayer\" /f");
     wchar_t ps[2048];
@@ -1251,9 +1392,9 @@ static bool setup_install(void) {
     wchar_t src_exe[MAX_PATH], pf[MAX_PATH], dir[MAX_PATH], dst_exe[MAX_PATH], dst_cfg[MAX_PATH], src_cfg[MAX_PATH];
     if (!GetModuleFileNameW(NULL, src_exe, MAX_PATH)) return false;
     get_prog_files(pf, MAX_PATH);
-    swprintf_s(dir, MAX_PATH, L"%s\\capslayer", pf);
-    swprintf_s(dst_exe, MAX_PATH, L"%s\\capslayer.exe", dir);
-    swprintf_s(dst_cfg, MAX_PATH, L"%s\\config.json", dir);
+    swprintf_s(dir, MAX_PATH, L"%ls\\capslayer", pf);
+    swprintf_s(dst_exe, MAX_PATH, L"%ls\\capslayer.exe", dir);
+    swprintf_s(dst_cfg, MAX_PATH, L"%ls\\config.json", dir);
 
     printf("===================================================\n      CapsLayer Automated Installer\n===================================================\n");
     run_cmd_hidden(L"taskkill /F /IM capslayer.exe");
@@ -1269,9 +1410,9 @@ static bool setup_install(void) {
     wcscpy_s(src_cfg, MAX_PATH, src_exe);
     wchar_t *s = wcsrchr(src_cfg, L'\\'); if (s) *s = L'\0';
     wcscat_s(src_cfg, MAX_PATH, L"\\config.json");
-    if (GetFileAttributesW(dst_cfg) == INVALID_FILE_ATTRIBUTES && GetFileAttributesW(src_cfg) != INVALID_FILE_ATTRIBUTES) {
+    if (GetFileAttributesW(src_cfg) != INVALID_FILE_ATTRIBUTES) {
         CopyFileW(src_cfg, dst_cfg, FALSE);
-        printf("  - Copied default config.json\n");
+        printf("  - Copied config.json\n");
     }
 
     wchar_t acl[1024];
@@ -1292,20 +1433,25 @@ static bool setup_install(void) {
 }
 
 static bool setup_uninstall(void) {
-    wchar_t pf[MAX_PATH], dir[MAX_PATH], del_lnk[1024], rd[1024];
+    wchar_t pf[MAX_PATH], dir[MAX_PATH], del_lnk[MAX_PATH], dst_exe[MAX_PATH], dst_cfg[MAX_PATH];
     get_prog_files(pf, MAX_PATH);
-    swprintf_s(dir, MAX_PATH, L"%s\\capslayer", pf);
+    swprintf_s(dir, MAX_PATH, L"%ls\\capslayer", pf);
+    swprintf_s(dst_exe, MAX_PATH, L"%ls\\capslayer.exe", dir);
+    swprintf_s(dst_cfg, MAX_PATH, L"%ls\\config.json", dir);
 
     printf("===================================================\n            CapsLayer Uninstaller\n===================================================\n");
     run_cmd_hidden(L"taskkill /F /IM capslayer.exe");
     Sleep(500);
     setup_disable_startup();
 
-    swprintf_s(del_lnk, sizeof(del_lnk) / sizeof(wchar_t), L"del /F /Q \"%s\\Microsoft\\Windows\\Start Menu\\Programs\\CapsLayer.lnk\"", _wgetenv(L"ProgramData") ? _wgetenv(L"ProgramData") : L"C:\\ProgramData");
-    run_cmd_hidden(del_lnk);
+    const wchar_t *pdata = _wgetenv(L"ProgramData");
+    if (!pdata) pdata = L"C:\\ProgramData";
+    swprintf_s(del_lnk, MAX_PATH, L"%ls\\Microsoft\\Windows\\Start Menu\\Programs\\CapsLayer.lnk", pdata);
+    DeleteFileW(del_lnk);
 
-    swprintf_s(rd, sizeof(rd) / sizeof(wchar_t), L"rmdir /S /Q \"%ls\"", dir);
-    run_cmd_hidden(rd);
+    DeleteFileW(dst_exe);
+    DeleteFileW(dst_cfg);
+    RemoveDirectoryW(dir);
     printf("[SUCCESS] CapsLayer uninstalled successfully.\n");
     return true;
 }
@@ -1441,7 +1587,7 @@ int main(int argc, char *argv[]) {
 
     if (g_app.do_status) {
         wchar_t pf[MAX_PATH], exe[MAX_PATH]; get_prog_files(pf, MAX_PATH);
-        swprintf_s(exe, MAX_PATH, L"%s\\capslayer\\capslayer.exe", pf);
+        swprintf_s(exe, MAX_PATH, L"%ls\\capslayer\\capslayer.exe", pf);
         printf("CapsLayer Status:\n  Installed: %s\n  Startup: %s\n",
             (GetFileAttributesW(exe) != INVALID_FILE_ATTRIBUTES) ? "YES" : "NO",
             run_cmd_hidden(L"schtasks /Query /TN \"CapsLayer\"") ? "ENABLED" : "DISABLED");
