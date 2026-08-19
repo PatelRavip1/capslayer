@@ -46,7 +46,7 @@ timeout /t 1 /nobreak >nul
 echo [2/5] Installing files to %TARGET_DIR%...
 if not exist "%TARGET_DIR%" mkdir "%TARGET_DIR%"
 copy /Y "%~dp0capslayer.exe" "%TARGET_EXE%" >nul
-if exist "%~dp0config.json" if not exist "%TARGET_CFG%" copy /Y "%~dp0config.json" "%TARGET_CFG%" >nul
+if exist "%~dp0config.json" copy /Y "%~dp0config.json" "%TARGET_CFG%" >nul
 copy /Y "%~f0" "%TARGET_DIR%\setup.bat" >nul
 if exist "%~dp0uninstall.bat" copy /Y "%~dp0uninstall.bat" "%TARGET_DIR%\uninstall.bat" >nul
 icacls "%TARGET_DIR%" /grant *S-1-5-32-545:(OI)(CI)M /T /Q >nul 2>&1

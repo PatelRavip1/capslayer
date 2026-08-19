@@ -69,7 +69,19 @@ static void test_key_name_to_vk(void)
     TEST_ASSERT(key_name_to_vk("alt") == VK_MENU, "Resolve 'alt'");
     TEST_ASSERT(key_name_to_vk("shift") == VK_SHIFT, "Resolve 'shift'");
     TEST_ASSERT(key_name_to_vk("win") == VK_LWIN, "Resolve 'win'");
-
+    TEST_ASSERT(key_name_to_vk("ralt") == VK_RMENU, "Resolve 'ralt'");
+    TEST_ASSERT(key_name_to_vk("right alt") == VK_RMENU, "Resolve 'right alt'");
+    TEST_ASSERT(key_name_to_vk("right_alt") == VK_RMENU, "Resolve 'right_alt'");
+    TEST_ASSERT(key_name_to_vk("rightalt") == VK_RMENU, "Resolve 'rightalt'");
+    TEST_ASSERT(key_name_to_vk("lalt") == VK_LMENU, "Resolve 'lalt'");
+    TEST_ASSERT(key_name_to_vk("left alt") == VK_LMENU, "Resolve 'left alt'");
+    TEST_ASSERT(key_name_to_vk("rctrl") == VK_RCONTROL, "Resolve 'rctrl'");
+    TEST_ASSERT(key_name_to_vk("lctrl") == VK_LCONTROL, "Resolve 'lctrl'");
+    TEST_ASSERT(key_name_to_vk("rshift") == VK_RSHIFT, "Resolve 'rshift'");
+    TEST_ASSERT(key_name_to_vk("lshift") == VK_LSHIFT, "Resolve 'lshift'");
+    TEST_ASSERT(key_name_to_vk("rwin") == VK_RWIN, "Resolve 'rwin'");
+    TEST_ASSERT(key_name_to_vk("lwin") == VK_LWIN, "Resolve 'lwin'");
+    TEST_ASSERT(key_name_to_vk("caps_lock") == VK_CAPITAL, "Resolve 'caps_lock'");
     /* OEM & Punctuation */
     TEST_ASSERT(key_name_to_vk(";") == VK_OEM_1, "Resolve ';'");
     TEST_ASSERT(key_name_to_vk("semicolon") == VK_OEM_1, "Resolve 'semicolon'");
@@ -86,6 +98,7 @@ static void test_key_name_to_vk(void)
     TEST_ASSERT(key_name_to_vk("") == 0, "Empty string returns 0");
     TEST_ASSERT(key_name_to_vk(NULL) == 0, "NULL string returns 0");
     TEST_ASSERT(key_name_to_vk("unknown_invalid_key_name_xyz") == 0, "Unknown key returns 0");
+    TEST_ASSERT(key_name_to_vk("modifier_key") == 0, "'modifier_key' string returns 0");
 }
 
 static void test_is_extended_key(void)
@@ -127,12 +140,12 @@ static void test_config_defaults(void)
     capslayer_config_t cfg;
     config_init_defaults(&cfg);
 
+    TEST_ASSERT(cfg.settings.modifier_vk == VK_CAPITAL, "Default modifier_vk is VK_CAPITAL");
     TEST_ASSERT(cfg.settings.capslock_tap_as_esc == true, "Default capslock_tap_as_esc is true");
     TEST_ASSERT(cfg.settings.esc_tap_as_capslock == true, "Default esc_tap_as_capslock is true");
     TEST_ASSERT(cfg.settings.swap_esc_and_capslock == false, "Default swap_esc_and_capslock is false");
     TEST_ASSERT(cfg.settings.unmapped_passthrough == true, "Default unmapped_passthrough is true");
     TEST_ASSERT(cfg.settings.show_tray_icon == true, "Default show_tray_icon is true");
-
     /* Check navigation layer defaults */
     WORD vk_i = key_name_to_vk("i");
     WORD vk_j = key_name_to_vk("j");
@@ -174,6 +187,7 @@ static void test_config_json_parsing(void)
     const char *test_json = 
         "{\n"
         "  \"settings\": {\n"
+        "    \"modifier_key\": \"right alt\",\n"
         "    \"capslock_tap_as_esc\": false,\n"
         "    \"esc_tap_as_capslock\": true,\n"
         "    \"swap_esc_and_capslock\": true,\n"
@@ -206,11 +220,10 @@ static void test_config_json_parsing(void)
     capslayer_config_t cfg;
     bool ok = config_load_from_json_string(test_json, &cfg);
     TEST_ASSERT(ok == true, "Parse valid JSON string");
-
+    TEST_ASSERT(cfg.settings.modifier_vk == VK_RMENU, "Parsed modifier_key 'right alt' as VK_RMENU");
     TEST_ASSERT(cfg.settings.capslock_tap_as_esc == false, "Parsed capslock_tap_as_esc is false");
     TEST_ASSERT(cfg.settings.swap_esc_and_capslock == true, "Parsed swap_esc_and_capslock is true");
     TEST_ASSERT(cfg.settings.unmapped_passthrough == false, "Parsed unmapped_passthrough is false");
-
     WORD vk_i = key_name_to_vk("i");
     TEST_ASSERT(cfg.layer_map[vk_i].type == ACTION_KEY && cfg.layer_map[vk_i].data.target_vk == VK_UP, "Parsed 'i' -> UP");
 
@@ -249,9 +262,9 @@ static void test_config_file_loading(void)
     bool ok = config_load_from_file("config.json", &cfg);
     TEST_ASSERT(ok == true, "Load default config.json from disk");
 
+    TEST_ASSERT(cfg.settings.modifier_vk == VK_RMENU, "config.json modifier_vk is VK_RMENU");
     TEST_ASSERT(cfg.settings.capslock_tap_as_esc == true, "config.json capslock_tap_as_esc");
     TEST_ASSERT(cfg.settings.esc_tap_as_capslock == true, "config.json esc_tap_as_capslock");
-
     WORD vk_i = key_name_to_vk("i");
     TEST_ASSERT(cfg.layer_map[vk_i].type == ACTION_KEY && cfg.layer_map[vk_i].data.target_vk == VK_UP, "config.json 'i' -> UP");
 
@@ -263,6 +276,9 @@ static void test_config_file_loading(void)
 
     /* Check shortcuts */
     TEST_ASSERT(cfg.shortcut_count >= 2, "config.json has 2 global shortcuts");
+
+    /* Verify 'm' is not erroneously remapped to Alt */
+    TEST_ASSERT(cfg.remap_map['M'] == 0, "config.json 'm' is not remapped to Alt");
 
     /* Nonexistent file */
     TEST_ASSERT(config_load_from_file("nonexistent_file_12345.json", &cfg) == false, "Nonexistent file returns false");
@@ -347,6 +363,204 @@ static void test_hook_state_management(void)
     res = LowLevelKeyboardProc(HC_ACTION, WM_KEYDOWN, (LPARAM)&injected_event);
     (void)res;
     TEST_ASSERT(true, "LowLevelKeyboardProc handled MAGIC_INJECTED_FLAG event without recursion");
+
+    /* Test Custom Modifier Key (Right Alt / VK_RMENU) */
+    cfg.settings.modifier_vk = VK_RMENU;
+    hook_update_config(&cfg);
+
+    KBDLLHOOKSTRUCT ralt_down;
+    ZeroMemory(&ralt_down, sizeof(ralt_down));
+    ralt_down.vkCode = VK_RMENU;
+    ralt_down.flags = LLKHF_EXTENDED;
+
+    res = LowLevelKeyboardProc(HC_ACTION, WM_KEYDOWN, (LPARAM)&ralt_down);
+    TEST_ASSERT(res == 1, "LowLevelKeyboardProc consumed Right Alt KeyDown");
+
+    /* While Right Alt is down, 'I' should be remapped to UP and consumed */
+    res = LowLevelKeyboardProc(HC_ACTION, WM_KEYDOWN, (LPARAM)&key_event);
+    TEST_ASSERT(res == 1, "LowLevelKeyboardProc remapped 'I' while Right Alt is held");
+
+    /* Releasing Right Alt */
+    KBDLLHOOKSTRUCT ralt_up;
+    ZeroMemory(&ralt_up, sizeof(ralt_up));
+    ralt_up.vkCode = VK_RMENU;
+    ralt_up.flags = LLKHF_EXTENDED;
+    res = LowLevelKeyboardProc(HC_ACTION, WM_KEYUP, (LPARAM)&ralt_up);
+    TEST_ASSERT(res == 1, "LowLevelKeyboardProc consumed Right Alt KeyUp");
+
+    /* Physical CapsLock when unmapped should pass through */
+    cfg.settings.capslock_tap_as_esc = false;
+    cfg.settings.swap_esc_and_capslock = false;
+    cfg.remap_map[VK_CAPITAL] = 0;
+    hook_update_config(&cfg);
+
+    KBDLLHOOKSTRUCT caps_event;
+    ZeroMemory(&caps_event, sizeof(caps_event));
+    caps_event.vkCode = VK_CAPITAL;
+    res = LowLevelKeyboardProc(HC_ACTION, WM_KEYDOWN, (LPARAM)&caps_event);
+    TEST_ASSERT(res == 0, "LowLevelKeyboardProc passed through CapsLock when unmapped");
+}
+
+static void test_capslock_esc_remapping(void)
+{
+    printf("\n=== Testing CapsLock <-> Esc Remapping ===\n");
+
+    /* 1. Test "remap": { "capslock": "esc", "esc": "capslock" } */
+    const char *remap_json = 
+        "{\n"
+        "  \"settings\": { \"modifier_key\": \"right alt\" },\n"
+        "  \"remap\": {\n"
+        "    \"capslock\": \"esc\",\n"
+        "    \"esc\": \"capslock\"\n"
+        "  }\n"
+        "}";
+    capslayer_config_t cfg1;
+    bool ok = config_load_from_json_string(remap_json, &cfg1);
+    TEST_ASSERT(ok == true, "Parse remap JSON block");
+    TEST_ASSERT(cfg1.remap_map[VK_CAPITAL] == VK_ESCAPE, "remap block maps capslock -> esc");
+    TEST_ASSERT(cfg1.remap_map[VK_ESCAPE] == VK_CAPITAL, "remap block maps esc -> capslock");
+
+    /* 2. Test "settings": { "capslock": "esc", "esc": "capslock" } */
+    const char *settings_remap_json = 
+        "{\n"
+        "  \"settings\": {\n"
+        "    \"modifier_key\": \"right alt\",\n"
+        "    \"capslock\": \"esc\",\n"
+        "    \"esc\": \"capslock\"\n"
+        "  }\n"
+        "}";
+    capslayer_config_t cfg2;
+    ok = config_load_from_json_string(settings_remap_json, &cfg2);
+    TEST_ASSERT(ok == true, "Parse settings key remap pairs");
+    TEST_ASSERT(cfg2.remap_map[VK_CAPITAL] == VK_ESCAPE, "settings pair maps capslock -> esc");
+    TEST_ASSERT(cfg2.remap_map[VK_ESCAPE] == VK_CAPITAL, "settings pair maps esc -> capslock");
+
+    /* 3. Test swap_esc_and_capslock: true */
+    const char *swap_json = 
+        "{\n"
+        "  \"settings\": {\n"
+        "    \"modifier_key\": \"right alt\",\n"
+        "    \"swap_esc_and_capslock\": true\n"
+        "  }\n"
+        "}";
+    capslayer_config_t cfg3;
+    ok = config_load_from_json_string(swap_json, &cfg3);
+    TEST_ASSERT(ok == true, "Parse swap_esc_and_capslock JSON");
+    TEST_ASSERT(cfg3.remap_map[VK_CAPITAL] == VK_ESCAPE, "swap_esc_and_capslock maps capslock -> esc");
+    TEST_ASSERT(cfg3.remap_map[VK_ESCAPE] == VK_CAPITAL, "swap_esc_and_capslock maps esc -> capslock");
+
+    /* 4. Test capslock_tap_as_esc & esc_tap_as_capslock when modifier is right alt */
+    const char *tap_cfg_json = 
+        "{\n"
+        "  \"settings\": {\n"
+        "    \"modifier_key\": \"right alt\",\n"
+        "    \"capslock_tap_as_esc\": true,\n"
+        "    \"esc_tap_as_capslock\": true\n"
+        "  }\n"
+        "}";
+    capslayer_config_t cfg4;
+    ok = config_load_from_json_string(tap_cfg_json, &cfg4);
+    TEST_ASSERT(ok == true, "Parse tap flags JSON");
+    TEST_ASSERT(cfg4.remap_map[VK_CAPITAL] == VK_ESCAPE, "capslock_tap_as_esc maps capslock -> esc");
+    TEST_ASSERT(cfg4.remap_map[VK_ESCAPE] == VK_CAPITAL, "esc_tap_as_capslock maps esc -> capslock");
+
+    /* 5. Hook execution test with CapsLock <-> Esc remapping */
+    hook_update_config(&cfg1);
+
+    KBDLLHOOKSTRUCT caps_down = { .vkCode = VK_CAPITAL };
+    LRESULT res = LowLevelKeyboardProc(HC_ACTION, WM_KEYDOWN, (LPARAM)&caps_down);
+    TEST_ASSERT(res == 1, "CapsLock KeyDown is intercepted and remapped");
+
+    KBDLLHOOKSTRUCT caps_up = { .vkCode = VK_CAPITAL };
+    res = LowLevelKeyboardProc(HC_ACTION, WM_KEYUP, (LPARAM)&caps_up);
+    TEST_ASSERT(res == 1, "CapsLock KeyUp is intercepted and released");
+
+    KBDLLHOOKSTRUCT esc_down = { .vkCode = VK_ESCAPE };
+    res = LowLevelKeyboardProc(HC_ACTION, WM_KEYDOWN, (LPARAM)&esc_down);
+    TEST_ASSERT(res == 1, "Esc KeyDown is intercepted and remapped");
+
+    KBDLLHOOKSTRUCT esc_up = { .vkCode = VK_ESCAPE };
+    res = LowLevelKeyboardProc(HC_ACTION, WM_KEYUP, (LPARAM)&esc_up);
+    TEST_ASSERT(res == 1, "Esc KeyUp is intercepted and released");
+    /* 6. Test layer-nested "capslock": "esc" and "esc": "capslock" */
+    const char *layer_nested_json =
+        "{\n"
+        "  \"settings\": { \"modifier_key\": \"right alt\" },\n"
+        "  \"layer\": {\n"
+        "    \"capslock\": \"esc\",\n"
+        "    \"esc\": \"capslock\",\n"
+        "    \"i\": \"up\"\n"
+        "  }\n"
+        "}";
+    capslayer_config_t cfg5;
+    ok = config_load_from_json_string(layer_nested_json, &cfg5);
+    TEST_ASSERT(ok == true, "Parse layer-nested capslock/esc JSON");
+    TEST_ASSERT(cfg5.remap_map[VK_CAPITAL] == VK_ESCAPE, "layer-nested capslock -> esc populates remap_map");
+    TEST_ASSERT(cfg5.remap_map[VK_ESCAPE] == VK_CAPITAL, "layer-nested esc -> capslock populates remap_map");
+
+    /* 7. Test top-level "capslock": "esc" and "esc": "capslock" */
+    const char *toplevel_json =
+        "{\n"
+        "  \"modifier_key\": \"right alt\",\n"
+        "  \"capslock\": \"esc\",\n"
+        "  \"esc\": \"capslock\"\n"
+        "}";
+    capslayer_config_t cfg6;
+    ok = config_load_from_json_string(toplevel_json, &cfg6);
+    TEST_ASSERT(ok == true, "Parse top-level capslock/esc JSON");
+    TEST_ASSERT(cfg6.remap_map[VK_CAPITAL] == VK_ESCAPE, "top-level capslock -> esc populates remap_map");
+    TEST_ASSERT(cfg6.remap_map[VK_ESCAPE] == VK_CAPITAL, "top-level esc -> capslock populates remap_map");
+}
+
+static void test_modifier_tap_vs_hold(void)
+{
+    printf("\n=== Testing Modifier Tap vs Hold Behavior ===\n");
+
+    capslayer_config_t cfg;
+    config_init_defaults(&cfg);
+    cfg.settings.modifier_vk = VK_RMENU;
+    cfg.settings.capslock_tap_as_esc = true;
+    cfg.settings.unmapped_passthrough = true;
+    hook_update_config(&cfg);
+
+    /* Test 1: Right Alt tapped in isolation (Key Down then Key Up) */
+    KBDLLHOOKSTRUCT ralt_down = { .vkCode = VK_RMENU, .flags = LLKHF_EXTENDED };
+    LRESULT res = LowLevelKeyboardProc(HC_ACTION, WM_KEYDOWN, (LPARAM)&ralt_down);
+    TEST_ASSERT(res == 1, "Isolated Right Alt KeyDown consumed for tap detection");
+
+    KBDLLHOOKSTRUCT ralt_up = { .vkCode = VK_RMENU, .flags = LLKHF_EXTENDED };
+    res = LowLevelKeyboardProc(HC_ACTION, WM_KEYUP, (LPARAM)&ralt_up);
+    TEST_ASSERT(res == 1, "Isolated Right Alt KeyUp triggers modifier tap and is consumed");
+
+    /* Test 2: Right Alt held + Layer key ('I' -> UP) */
+    res = LowLevelKeyboardProc(HC_ACTION, WM_KEYDOWN, (LPARAM)&ralt_down);
+    TEST_ASSERT(res == 1, "Right Alt KeyDown consumed");
+
+    KBDLLHOOKSTRUCT key_i_down = { .vkCode = 0x49 }; /* 'I' */
+    res = LowLevelKeyboardProc(HC_ACTION, WM_KEYDOWN, (LPARAM)&key_i_down);
+    TEST_ASSERT(res == 1, "'I' KeyDown while holding Right Alt is remapped to UP");
+
+    KBDLLHOOKSTRUCT key_i_up = { .vkCode = 0x49 };
+    res = LowLevelKeyboardProc(HC_ACTION, WM_KEYUP, (LPARAM)&key_i_up);
+    TEST_ASSERT(res == 1, "'I' KeyUp while holding Right Alt is handled");
+
+    res = LowLevelKeyboardProc(HC_ACTION, WM_KEYUP, (LPARAM)&ralt_up);
+    TEST_ASSERT(res == 1, "Right Alt KeyUp after layer key does not fire isolated tap");
+
+    /* Test 3: Right Alt held + Unmapped key (Tab) */
+    res = LowLevelKeyboardProc(HC_ACTION, WM_KEYDOWN, (LPARAM)&ralt_down);
+    TEST_ASSERT(res == 1, "Right Alt KeyDown consumed");
+
+    KBDLLHOOKSTRUCT tab_down = { .vkCode = VK_TAB };
+    res = LowLevelKeyboardProc(HC_ACTION, WM_KEYDOWN, (LPARAM)&tab_down);
+    TEST_ASSERT(res == 0, "Unmapped Tab KeyDown passes through to OS with modifier");
+
+    KBDLLHOOKSTRUCT tab_up = { .vkCode = VK_TAB };
+    res = LowLevelKeyboardProc(HC_ACTION, WM_KEYUP, (LPARAM)&tab_up);
+    TEST_ASSERT(res == 0, "Unmapped Tab KeyUp passes through to OS");
+
+    res = LowLevelKeyboardProc(HC_ACTION, WM_KEYUP, (LPARAM)&ralt_up);
+    TEST_ASSERT(res == 1, "Right Alt KeyUp after unmapped key releases passthrough modifier");
 }
 
 int main(void)
@@ -362,7 +576,8 @@ int main(void)
     test_config_file_loading();
     test_path_helpers();
     test_hook_state_management();
-
+    test_capslock_esc_remapping();
+    test_modifier_tap_vs_hold();
     printf("\n===================================================\n");
     printf("Tests Run: %d | Passed: %d | Failed: %d\n", g_tests_run, g_tests_passed, g_tests_run - g_tests_passed);
     printf("===================================================\n");
