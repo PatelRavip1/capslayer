@@ -1,16 +1,12 @@
 {
   "settings": {
-    "modifier_key": "right alt",
+    "modifier_key": "capslock",
     "capslock_tap_as_esc": true,
     "esc_tap_as_capslock": true,
-    "swap_esc_and_capslock": true,
+    "swap_esc_and_capslock": false,
     "unmapped_passthrough": true,
     "show_tray_icon": true,
     "start_minimized": false
-  },
-  "remap": {
-    "capslock": "esc",
-    "esc": "capslock"
   },
   "layer": {
     "i": "up",

@@ -36,10 +36,19 @@ typedef struct jnode {
 } jnode_t;
 
 static const char *skip_ws(const char *s) {
-    while (*s && ((unsigned char)*s <= ' ' || *s == '/')) {
-        if (*s == '/' && s[1] == '/') { while (*s && *s != '\n') s++; }
-        else if (*s == '/' && s[1] == '*') { s += 2; while (*s && !(*s == '*' && s[1] == '/')) s++; if (*s) s += 2; }
-        else s++;
+    while (*s) {
+        if ((unsigned char)*s <= ' ') {
+            s++;
+        } else if (*s == '/' && s[1] == '/') {
+            s += 2;
+            while (*s && *s != '\n') s++;
+        } else if (*s == '/' && s[1] == '*') {
+            s += 2;
+            while (*s && !(*s == '*' && s[1] == '/')) s++;
+            if (*s) s += 2;
+        } else {
+            break;
+        }
     }
     return s;
 }
@@ -1153,7 +1162,14 @@ bool hook_install(HINSTANCE hInstance) {
 
 void hook_uninstall(void) {
     stop_blinker();
-    if (g_hook_handle) { UnhookWindowsHookEx(g_hook_handle); g_hook_handle = NULL; }
+    if (g_stop_blink_event) {
+        CloseHandle(g_stop_blink_event);
+        g_stop_blink_event = NULL;
+    }
+    if (g_hook_handle) {
+        UnhookWindowsHookEx(g_hook_handle);
+        g_hook_handle = NULL;
+    }
     release_injected_keys();
     if (g_layer_mod_passthrough_down) {
         WORD mod_vk = g_active_config.settings.modifier_vk ? g_active_config.settings.modifier_vk : VK_CAPITAL;
@@ -1163,6 +1179,10 @@ void hook_uninstall(void) {
     g_layer_mod_down = false;
     g_layer_mod_used = false;
     g_persistent_layer = false;
+    if (g_cs_init) {
+        DeleteCriticalSection(&g_config_cs);
+        g_cs_init = false;
+    }
 }
 
 /* ========================================================================= */
@@ -1350,8 +1370,8 @@ static bool relaunch_admin(int argc, char *argv[]) {
 static bool setup_enable_startup(void) {
     wchar_t pf[MAX_PATH], dir[MAX_PATH], exe[MAX_PATH];
     get_prog_files(pf, MAX_PATH);
-    swprintf_s(dir, MAX_PATH, L"%s\\capslayer", pf);
-    swprintf_s(exe, MAX_PATH, L"%s\\capslayer.exe", dir);
+    swprintf_s(dir, MAX_PATH, L"%ls\\capslayer", pf);
+    swprintf_s(exe, MAX_PATH, L"%ls\\capslayer.exe", dir);
     run_cmd_hidden(L"reg delete \"HKLM\\Software\\Microsoft\\Windows\\CurrentVersion\\Run\" /v \"CapsLayer\" /f");
     run_cmd_hidden(L"reg delete \"HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run\" /v \"CapsLayer\" /f");
     wchar_t ps[2048];
@@ -1372,9 +1392,9 @@ static bool setup_install(void) {
     wchar_t src_exe[MAX_PATH], pf[MAX_PATH], dir[MAX_PATH], dst_exe[MAX_PATH], dst_cfg[MAX_PATH], src_cfg[MAX_PATH];
     if (!GetModuleFileNameW(NULL, src_exe, MAX_PATH)) return false;
     get_prog_files(pf, MAX_PATH);
-    swprintf_s(dir, MAX_PATH, L"%s\\capslayer", pf);
-    swprintf_s(dst_exe, MAX_PATH, L"%s\\capslayer.exe", dir);
-    swprintf_s(dst_cfg, MAX_PATH, L"%s\\config.json", dir);
+    swprintf_s(dir, MAX_PATH, L"%ls\\capslayer", pf);
+    swprintf_s(dst_exe, MAX_PATH, L"%ls\\capslayer.exe", dir);
+    swprintf_s(dst_cfg, MAX_PATH, L"%ls\\config.json", dir);
 
     printf("===================================================\n      CapsLayer Automated Installer\n===================================================\n");
     run_cmd_hidden(L"taskkill /F /IM capslayer.exe");
@@ -1413,20 +1433,25 @@ static bool setup_install(void) {
 }
 
 static bool setup_uninstall(void) {
-    wchar_t pf[MAX_PATH], dir[MAX_PATH], del_lnk[1024], rd[1024];
+    wchar_t pf[MAX_PATH], dir[MAX_PATH], del_lnk[MAX_PATH], dst_exe[MAX_PATH], dst_cfg[MAX_PATH];
     get_prog_files(pf, MAX_PATH);
-    swprintf_s(dir, MAX_PATH, L"%s\\capslayer", pf);
+    swprintf_s(dir, MAX_PATH, L"%ls\\capslayer", pf);
+    swprintf_s(dst_exe, MAX_PATH, L"%ls\\capslayer.exe", dir);
+    swprintf_s(dst_cfg, MAX_PATH, L"%ls\\config.json", dir);
 
     printf("===================================================\n            CapsLayer Uninstaller\n===================================================\n");
     run_cmd_hidden(L"taskkill /F /IM capslayer.exe");
     Sleep(500);
     setup_disable_startup();
 
-    swprintf_s(del_lnk, sizeof(del_lnk) / sizeof(wchar_t), L"del /F /Q \"%s\\Microsoft\\Windows\\Start Menu\\Programs\\CapsLayer.lnk\"", _wgetenv(L"ProgramData") ? _wgetenv(L"ProgramData") : L"C:\\ProgramData");
-    run_cmd_hidden(del_lnk);
+    const wchar_t *pdata = _wgetenv(L"ProgramData");
+    if (!pdata) pdata = L"C:\\ProgramData";
+    swprintf_s(del_lnk, MAX_PATH, L"%ls\\Microsoft\\Windows\\Start Menu\\Programs\\CapsLayer.lnk", pdata);
+    DeleteFileW(del_lnk);
 
-    swprintf_s(rd, sizeof(rd) / sizeof(wchar_t), L"rmdir /S /Q \"%ls\"", dir);
-    run_cmd_hidden(rd);
+    DeleteFileW(dst_exe);
+    DeleteFileW(dst_cfg);
+    RemoveDirectoryW(dir);
     printf("[SUCCESS] CapsLayer uninstalled successfully.\n");
     return true;
 }
@@ -1562,7 +1587,7 @@ int main(int argc, char *argv[]) {
 
     if (g_app.do_status) {
         wchar_t pf[MAX_PATH], exe[MAX_PATH]; get_prog_files(pf, MAX_PATH);
-        swprintf_s(exe, MAX_PATH, L"%s\\capslayer\\capslayer.exe", pf);
+        swprintf_s(exe, MAX_PATH, L"%ls\\capslayer\\capslayer.exe", pf);
         printf("CapsLayer Status:\n  Installed: %s\n  Startup: %s\n",
             (GetFileAttributesW(exe) != INVALID_FILE_ATTRIBUTES) ? "YES" : "NO",
             run_cmd_hidden(L"schtasks /Query /TN \"CapsLayer\"") ? "ENABLED" : "DISABLED");

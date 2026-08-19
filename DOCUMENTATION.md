@@ -1,6 +1,6 @@
 # CapsLayer: Comprehensive Architecture & Codebase Documentation
 
-> **A human-understandable, complete technical guide to the CapsLayer keyboard daemon, covering architecture, design principles, file structure, and every function with full bidirectional call graphs.**
+> **A human-understandable, complete technical guide to the CapsLayer keyboard daemon, covering architecture, design principles, file structure, configuration schema, and every function with full bidirectional call graphs.**
 
 ---
 
@@ -28,39 +28,42 @@
 
 ## 1. Executive Summary & Mental Model
 
-**CapsLayer** is a lightweight, ultra-low-latency Windows background utility written in C. It transforms the physical **CapsLock** key into a multi-functional dual-role modifier:
+**CapsLayer** is a lightweight, ultra-low-latency Windows background utility written in pure C using the Win32 API. It transforms a designated physical key—by default **CapsLock**, or any configured modifier such as **Right Alt**, **Left Ctrl**, **Left Alt**, or **Windows Key**—into a multi-functional dual-role modifier, while also providing 1-to-1 global key remappings and persistent modal layers:
 
 ```
-                          ┌───────────────────────────┐
-                          │   Physical CapsLock Key   │
-                          └─────────────┬─────────────┘
+                         ┌─────────────────────────────┐
+                         │   Physical Modifier Key     │
+                         │ (CapsLock / Right Alt / ...)│
+                         └──────────────┬──────────────┘
                                         │
                  ┌──────────────────────┴──────────────────────┐
                  │                                             │
-      [ Tapped alone (< 200ms) ]                    [ Held with other keys ]
+      [ Tapped Alone (No Combo) ]                   [ Held with other keys ]
                  │                                             │
                  ▼                                             ▼
-       Emits ESCAPE Key                           Activates Navigation Layer:
-    (or CapsLock if swapped)                     • Caps + I/J/K/L -> Up/Left/Down/Right
-                                                 • Caps + H/;/U/D -> Home/End/PgUp/PgDn
-                                                 • Caps + M/N     -> Delete/Backspace
-                                                 • Caps + W/C/V   -> Alt+F4 / Ctrl+C / Ctrl+V
-                                                 • Caps + P       -> Lock Persistent Layer
+       Emits Escape (or Tap VK)                    Activates Navigation Layer:
+   • CapsLock -> Emits Escape                    • Mod + I/J/K/L -> Up/Left/Down/Right
+   • Right Alt -> Emits Alt / Escape             • Mod + H/;/U/D -> Home/End/PgUp/PgDn
+   • Custom remap -> Emits target VK             • Mod + M/N     -> Delete/Backspace
+                                                 • Mod + W/C/V   -> Alt+F4 / Ctrl+C / Ctrl+V
+                                                 • Mod + P       -> Lock Persistent Layer
+                                                 • Unmapped Keys -> Transparent Mod Passthrough
 ```
 
 ### Core Design Pillars
-1. **Zero External Dependencies**: Implements its own compact JSON parser and Windows API bindings without external DLLs or runtime frameworks.
-2. **Deterministic Single-Translation Unit**: Core functionality is encapsulated in `src/capslayer.c` and `src/capslayer.h` for fast builds and LTO (Link-Time Optimization).
-3. **Anti-Recursion Safety**: All synthetic keystrokes injected via `SendInput()` are tagged with `MAGIC_INJECTED_FLAG` (`0xC4951A9E`), ensuring the low-level hook never intercepts its own events.
-4. **Non-Blocking Execution**: External commands triggered by key combinations are executed asynchronously on dedicated background worker threads so typing latency is never blocked.
-5. **Live Hot-Reloading**: A directory watcher monitoring `config.json` via `ReadDirectoryChangesW` reloads configuration on the fly without restarting the process.
+1. **Zero External Dependencies**: Implements its own compact JSON parser and native Win32 API bindings without external DLLs or runtime frameworks.
+2. **Configurable Modifier Key & Arbitrary Remappings**: Supports any key as the layer modifier (e.g. `Right Alt` / `AltGr`, `Left Ctrl`, `CapsLock`) along with arbitrary 1-to-1 key swaps (`remap` map).
+3. **Deterministic Single-Translation Unit**: Core functionality is encapsulated in `src/capslayer.c` and `src/capslayer.h` for fast builds and compiler optimizations.
+4. **Anti-Recursion Safety**: All synthetic keystrokes injected via `SendInput()` are tagged with `MAGIC_INJECTED_FLAG` (`0xC4951A9E`), ensuring the low-level hook never intercepts its own events.
+5. **Non-Blocking Execution**: External commands triggered by key combinations are executed asynchronously on dedicated background worker threads so typing latency is never blocked.
+6. **Live Hot-Reloading**: A directory watcher monitoring `config.json` via `ReadDirectoryChangesW` reloads configuration on the fly without restarting the process (250ms debounced).
 
 ---
 
 ## 2. Project File Structure
 
 ```
-D:/new/
+capslayer/
 │
 ├── src/
 │   ├── capslayer.h             # Public headers, data structures, constants, and API definitions
@@ -71,7 +74,7 @@ D:/new/
 │   └── capslayer.manifest      # Win32 Application Manifest specifying DPI awareness and execution level
 │
 ├── tests/
-│   └── test_capslayer.c        # Unit test suite verifying key mappings, JSON parsing, and hook state logic
+│   └── test_capslayer.c        # Autonomous unit test suite (187 assertions across 9 test modules)
 │
 ├── config.json                 # User configuration file (layer bindings, global hotkeys, settings)
 ├── setup.bat                   # Automated installer script (auto-elevates, deploys, configures Task Scheduler)
@@ -79,19 +82,19 @@ D:/new/
 ├── capslayer.exe               # Pre-compiled high-performance Windows binary
 ├── .gitignore                  # Git ignore rules for build artifacts and intermediate files
 ├── README.md                   # Quick-start documentation and general project overview
-└── DOCUMENTATION.md            # Comprehensive architecture and codebase explanation (this document)
+└── DOCUMENTATION.md            # Comprehensive architecture and codebase documentation (this document)
 ```
 
 ### File Details
 
 | File Path | Role & Purpose |
 |---|---|
-| `src/capslayer.h` | Defines public types (`capslayer_config_t`, `layer_action_t`, `global_shortcut_t`), action enums, Win32 constants, and API prototypes. |
+| `src/capslayer.h` | Defines public types (`capslayer_config_t`, `config_settings_t`, `layer_action_t`, `global_shortcut_t`), action enums, Win32 constants, and API prototypes. |
 | `src/capslayer.c` | Contains the entire application logic organized into 6 modules: JSON parser, Key resolver, Configuration loader, Keyboard hook engine, System tray GUI, and Main daemon loop. |
 | `res/resource.rc` | Windows resource description compiled by `zig rc` or `rc.exe` into binary `.res` format. |
 | `res/capslayer.manifest` | Declares compatibility with Windows 7 through Windows 11 and sets `requestedExecutionLevel` to `asInvoker`. |
-| `tests/test_capslayer.c` | Autonomous test runner with 132 test assertions verifying key parsing, file loading, JSON correctness, and hook behavior. |
-| `config.json` | JSON configuration containing default navigation bindings (`I/J/K/L`), shortcut commands (`win+alt+esc`), and timing options. |
+| `tests/test_capslayer.c` | Autonomous test runner containing 187 test assertions verifying key parsing, file loading, JSON correctness, custom modifier behavior, and hook state logic. |
+| `config.json` | JSON configuration containing default navigation bindings (`I/J/K/L`), shortcut commands (`win+alt+esc`), modifier selection, and timing options. |
 | `setup.bat` | Command-line script with UAC auto-elevation that installs CapsLayer to `%ProgramFiles(x86)%\capslayer`, registers an elevated logon task in Task Scheduler, creates Start Menu shortcuts, and launches the daemon. |
 | `uninstall.bat` | Cleans up all registry keys, Task Scheduler entries, Start Menu shortcuts, and deletes the installation directory. |
 
@@ -112,7 +115,7 @@ D:/new/
  │                LowLevelKeyboardProc()                       │
  └────────────────────────────┬────────────────────────────────┘
                               │
-    Is event injected or is hook paused?
+    Is event injected (MAGIC_INJECTED_FLAG / LLKHF_INJECTED) or is hook paused?
          ├── YES ──► CallNextHookEx() [Pass through to OS]
          └── NO
               │
@@ -120,14 +123,29 @@ D:/new/
          ├── YES ──► [Consume Event] ──► spawn_process_async() / send_key_combo()
          └── NO
               │
-    Is physical CapsLock event?
-         ├── KeyDown ──► Suppress CapsLock, set g_capslock_down = true
-         └── KeyUp   ──► If unused as layer modifier, emit ESCAPE (send_key_tap)
+    Is event matching the configured Layer Modifier Key (e.g. CapsLock / Right Alt)?
+         ├── KeyDown ──► Suppress Key, set g_layer_mod_down = true, g_layer_mod_used = false
+         └── KeyUp   ──► If unused as layer modifier:
+                           • If CapsLock & tap_as_esc: emit Escape (send_key_tap)
+                           • If custom modifier & modifier_tap_as_esc: emit Escape
+                           • Otherwise emit configured remap or original modifier tap
               │
-    Is Layer Active (CapsLock held OR Persistent Lock active)?
-         ├── Mapping Found (e.g. 'I') ──► [Consume Event] ──► send_key_event(VK_UP)
-         ├── Toggle Lock Key ('P')    ──► [Consume Event] ──► hook_toggle_persistent_layer()
-         └── Unmapped Key             ──► Pass through (if unmapped_passthrough is true)
+    Is Layer Active (Modifier held OR Persistent Lock active)?
+         ├── Persistent Lock Exit on Escape / remapped CapsLock ──► hook_set_persistent_layer(false)
+         ├── Toggle Lock Key ('P' or toggle_persistent action)  ──► hook_toggle_persistent_layer()
+         ├── Mapped Layer Action (e.g. 'I' -> UP):
+         │     ├── ACTION_KEY   ──► handle_key_remap(vk, is_down, is_up, target_vk)
+         │     ├── ACTION_COMBO ──► send_key_combo(vks, count)
+         │     └── ACTION_EXEC  ──► spawn_process_async(command)
+         └── Unmapped Key:
+               ├── If unmapped_passthrough:
+               │     • Synthesize modifier down if modifier is Ctrl/Alt/Shift/Win
+               │     • Check direct remap_map[vk] or pass through via CallNextHookEx()
+               └── If not unmapped_passthrough ──► Consume event
+              │
+    Normal Typing Mode (Layer Inactive):
+         ├── Key present in remap_map[vk] ──► handle_key_remap(vk, is_down, is_up, target_vk)
+         └── Not remapped ──► CallNextHookEx() [Pass through to OS]
 ```
 
 ---
@@ -159,8 +177,8 @@ CapsLayer utilizes a multi-threaded architecture to ensure zero dropped keystrok
 ```
 
 1. **Main UI & Hook Thread**: Handles the Win32 message pump (`GetMessageW`/`DispatchMessageW`), receives low-level keyboard input notifications directly from the OS, and manages the notification area (system tray) icon.
-2. **Config Watcher Thread (`config_watcher`)**: Uses `ReadDirectoryChangesW` in an overlapped asynchronous loop to monitor file modifications in the directory containing `config.json`. When a change is detected and debounced (250ms), it sends `WM_USER_RELOAD_CONFIG` to the main window.
-3. **Blinker Thread (`blink_worker`)**: When Persistent Layer Lock is toggled on (`Caps + P`), this thread pulses the keyboard CapsLock LED at 1-second intervals to visually indicate that navigation mode is locked on.
+2. **Config Watcher Thread (`config_watcher`)**: Uses `ReadDirectoryChangesW` in an overlapped asynchronous loop to monitor file modifications in the directory containing `config.json`. When a change is detected and debounced (250ms), it posts `WM_USER_RELOAD_CONFIG` to the main window.
+3. **Blinker Thread (`blink_worker`)**: When Persistent Layer Lock is toggled on (`Mod + P`), this thread pulses the keyboard CapsLock LED at 1-second intervals to visually indicate that navigation mode is locked on.
 4. **Async Process Workers (`async_exec_worker`)**: Spawns external commands (such as Windows Terminal `wt.exe` or custom scripts) in detached background threads using `CreateProcessW` / `ShellExecuteExW`.
 
 ---
@@ -168,7 +186,9 @@ CapsLayer utilizes a multi-threaded architecture to ensure zero dropped keystrok
 ### 3.3 Mutex & Single-Instance Guarantee
 
 To avoid multiple hook instances conflicting with each other, CapsLayer creates a named Win32 Mutex:
-`MUTEX_NAME = L"CapsLayer_SingleInstance_Mutex"`
+```c
+MUTEX_NAME = L"CapsLayer_SingleInstance_Mutex"
+```
 
 If `CreateMutexW` returns `ERROR_ALREADY_EXISTS`, the newly launched process immediately exits cleanly.
 
@@ -176,7 +196,7 @@ If `CreateMutexW` returns `ERROR_ALREADY_EXISTS`, the newly launched process imm
 
 ## 4. Complete Function Reference & Call Graph
 
-Below is the complete catalog of every function in the project, categorized by subsystem, with explanation and bidirectional markdown links.
+Below is the complete catalog of every function in the project, categorized by subsystem, with explanations and bidirectional markdown links.
 
 ---
 
@@ -185,12 +205,12 @@ Below is the complete catalog of every function in the project, categorized by s
 | Module | Functions |
 |---|---|
 | **JSON Parser** | [`skip_ws`](#skip_ws), [`parse_str`](#parse_str), [`jnode_free`](#jnode_free), [`parse_val`](#parse_val), [`parse_arr`](#parse_arr), [`parse_obj`](#parse_obj), [`jget`](#jget), [`jget_str`](#jget_str), [`jget_bool`](#jget_bool) |
-| **Key Translation** | [`key_name_to_vk`](#key_name_to_vk), [`is_extended_key`](#is_extended_key), [`is_modifier_key`](#is_modifier_key), [`is_modifier_down`](#is_modifier_down), [`send_key_event`](#send_key_event), [`send_key_tap`](#send_key_tap), [`send_key_combo`](#send_key_combo), [`async_exec_worker`](#async_exec_worker), [`spawn_process_async`](#spawn_process_async) |
-| **Configuration** | [`is_toggle_persistent_name`](#is_toggle_persistent_name), [`parse_combo_str`](#parse_combo_str), [`parse_layer_action_node`](#parse_layer_action_node), [`parse_shortcut_combo`](#parse_shortcut_combo), [`config_init_defaults`](#config_init_defaults), [`config_load_from_json_string`](#config_load_from_json_string), [`config_load_from_file`](#config_load_from_file), [`config_get_default_path`](#config_get_default_path), [`config_get_dir_path`](#config_get_dir_path) |
-| **Keyboard Hook Engine** | [`init_cs_once`](#init_cs_once), [`hook_update_config`](#hook_update_config), [`get_config_snapshot`](#get_config_snapshot), [`hook_is_installed`](#hook_is_installed), [`hook_is_paused`](#hook_is_paused), [`hook_is_persistent_layer`](#hook_is_persistent_layer), [`blink_worker`](#blink_worker), [`start_blinker`](#start_blinker), [`stop_blinker`](#stop_blinker), [`release_injected_keys`](#release_injected_keys), [`hook_set_paused`](#hook_set_paused), [`hook_set_persistent_layer`](#hook_set_persistent_layer), [`hook_toggle_persistent_layer`](#hook_toggle_persistent_layer), [`hook_set_state_callback`](#hook_set_state_callback), [`LowLevelKeyboardProc`](#lowlevelkeyboardproc), [`hook_install`](#hook_install), [`hook_uninstall`](#hook_uninstall) |
+| **Key Translation** | [`key_name_to_vk`](#key_name_to_vk), [`is_extended_key`](#is_extended_key), [`is_modifier_key`](#is_modifier_key), [`is_modifier_match`](#is_modifier_match), [`is_modifier_down`](#is_modifier_down), [`send_key_event`](#send_key_event), [`send_key_tap`](#send_key_tap), [`send_key_combo`](#send_key_combo), [`async_exec_worker`](#async_exec_worker), [`spawn_process_async`](#spawn_process_async) |
+| **Configuration** | [`is_toggle_persistent_name`](#is_toggle_persistent_name), [`parse_combo_str`](#parse_combo_str), [`parse_layer_action_node`](#parse_layer_action_node), [`parse_shortcut_combo`](#parse_shortcut_combo), [`parse_remap_pairs`](#parse_remap_pairs), [`config_init_defaults`](#config_init_defaults), [`config_load_from_json_string`](#config_load_from_json_string), [`config_load_from_file`](#config_load_from_file), [`config_get_default_path`](#config_get_default_path), [`config_get_dir_path`](#config_get_dir_path) |
+| **Keyboard Hook Engine** | [`init_cs_once`](#init_cs_once), [`hook_update_config`](#hook_update_config), [`hook_is_installed`](#hook_is_installed), [`hook_is_paused`](#hook_is_paused), [`hook_is_persistent_layer`](#hook_is_persistent_layer), [`blink_worker`](#blink_worker), [`start_blinker`](#start_blinker), [`stop_blinker`](#stop_blinker), [`release_injected_keys`](#release_injected_keys), [`hook_set_paused`](#hook_set_paused), [`hook_set_persistent_layer`](#hook_set_persistent_layer), [`hook_toggle_persistent_layer`](#hook_toggle_persistent_layer), [`hook_set_state_callback`](#hook_set_state_callback), [`handle_key_remap`](#handle_key_remap), [`LowLevelKeyboardProc`](#lowlevelkeyboardproc), [`hook_install`](#hook_install), [`hook_uninstall`](#hook_uninstall) |
 | **System Tray GUI** | [`create_status_icon`](#create_status_icon), [`tray_init`](#tray_init), [`tray_update_status`](#tray_update_status), [`tray_show_menu`](#tray_show_menu), [`tray_cleanup`](#tray_cleanup) |
 | **Daemon & Lifecycle** | [`log_msg`](#log_msg), [`run_cmd_hidden`](#run_cmd_hidden), [`get_prog_files`](#get_prog_files), [`is_admin`](#is_admin), [`relaunch_admin`](#relaunch_admin), [`setup_enable_startup`](#setup_enable_startup), [`setup_disable_startup`](#setup_disable_startup), [`setup_install`](#setup_install), [`setup_uninstall`](#setup_uninstall), [`reload_config`](#reload_config), [`config_watcher`](#config_watcher), [`on_layer_state`](#on_layer_state), [`MainWndProc`](#mainwndproc), [`attach_console`](#attach_console), [`main`](#main), [`WinMain`](#winmain) |
-| **Test Suite** | [`test_key_name_to_vk`](#test_key_name_to_vk), [`test_is_extended_key`](#test_is_extended_key), [`test_config_defaults`](#test_config_defaults), [`test_config_json_parsing`](#test_config_json_parsing), [`test_config_file_loading`](#test_config_file_loading), [`test_path_helpers`](#test_path_helpers), [`test_hook_state_management`](#test_hook_state_management) |
+| **Test Suite** | [`test_key_name_to_vk`](#test_key_name_to_vk), [`test_is_extended_key`](#test_is_extended_key), [`test_config_defaults`](#test_config_defaults), [`test_config_json_parsing`](#test_config_json_parsing), [`test_config_file_loading`](#test_config_file_loading), [`test_path_helpers`](#test_path_helpers), [`test_hook_state_management`](#test_hook_state_management), [`test_capslock_esc_remapping`](#test_capslock_esc_remapping), [`test_modifier_tap_vs_hold`](#test_modifier_tap_vs_hold) |
 
 ---
 
@@ -266,8 +286,8 @@ Below is the complete catalog of every function in the project, categorized by s
 #### `key_name_to_vk`
 - **Signature**: `WORD key_name_to_vk(const char *name)`
 - **Visibility**: `extern` (Declared in `capslayer.h`)
-- **Description**: Converts human-readable key names (e.g., `"up"`, `"escape"`, `"f5"`, `"ctrl"`, `";"`, `"volume_up"`) to Windows Virtual Key codes (`VK_*`). Handles single alphanumeric letters, function keys `f1`-`f24`, predefined alias tables, and falls back to `VkKeyScanW` for OEM keyboard layouts.
-- **Called By**: [`parse_combo_str`](#parse_combo_str), [`parse_layer_action_node`](#parse_layer_action_node), [`parse_shortcut_combo`](#parse_shortcut_combo), [`config_init_defaults`](#config_init_defaults), [`config_load_from_json_string`](#config_load_from_json_string), [`test_key_name_to_vk`](#test_key_name_to_vk), [`test_config_defaults`](#test_config_defaults), [`test_config_json_parsing`](#test_config_json_parsing), [`test_config_file_loading`](#test_config_file_loading)
+- **Description**: Converts human-readable key names to Windows Virtual Key codes (`VK_*`). Handles single alphanumeric letters, function keys `f1`-`f24`, predefined alias tables for modifiers (e.g. `right alt`, `ralt`, `altgr`, `left ctrl`, `lctrl`, `super`, `win`), media keys (`volume_up`, `play_pause`), navigation keys, punctuation/symbols, numpad keys, and falls back to `VkKeyScanW` for layout characters.
+- **Called By**: [`parse_combo_str`](#parse_combo_str), [`parse_layer_action_node`](#parse_layer_action_node), [`parse_shortcut_combo`](#parse_shortcut_combo), [`parse_remap_pairs`](#parse_remap_pairs), [`config_init_defaults`](#config_init_defaults), [`config_load_from_json_string`](#config_load_from_json_string), [`test_key_name_to_vk`](#test_key_name_to_vk), [`test_config_defaults`](#test_config_defaults), [`test_config_json_parsing`](#test_config_json_parsing), [`test_config_file_loading`](#test_config_file_loading)
 - **Calls**: `tolower`, `isdigit`, `atoi`, `_stricmp`, Win32 `MultiByteToWideChar`, Win32 `VkKeyScanW`.
 
 #### `is_extended_key`
@@ -281,13 +301,20 @@ Below is the complete catalog of every function in the project, categorized by s
 - **Signature**: `bool is_modifier_key(WORD vk)`
 - **Visibility**: `extern`
 - **Description**: Returns `true` if the specified Virtual Key is a modifier key (Shift, Ctrl, Alt, or Win), including left/right variants.
-- **Called By**: [`parse_shortcut_combo`](#parse_shortcut_combo), [`config_load_from_json_string`](#config_load_from_json_string), [`test_is_extended_key`](#test_is_extended_key)
+- **Called By**: [`parse_shortcut_combo`](#parse_shortcut_combo), [`config_load_from_json_string`](#config_load_from_json_string), [`LowLevelKeyboardProc`](#lowlevelkeyboardproc), [`test_is_extended_key`](#test_is_extended_key)
 - **Calls**: Switch lookup table.
+
+#### `is_modifier_match`
+- **Signature**: `static inline bool is_modifier_match(WORD key_vk, WORD target_vk, DWORD flags)`
+- **Visibility**: `static inline`
+- **Description**: Matches an intercepted hardware key against a target modifier key, correctly resolving generic modifiers (`VK_MENU`, `VK_CONTROL`, `VK_SHIFT`) and specific left/right variants (`VK_RMENU`, `VK_LMENU`, `VK_RCONTROL`, `VK_LCONTROL`, etc.) while checking the `LLKHF_EXTENDED` flag.
+- **Called By**: [`LowLevelKeyboardProc`](#lowlevelkeyboardproc)
+- **Calls**: None.
 
 #### `is_modifier_down`
 - **Signature**: `bool is_modifier_down(WORD vk)`
 - **Visibility**: `extern`
-- **Description**: Checks the physical asynchronous state of a modifier key using `GetAsyncKeyState()`, checking generic and left/right variants simultaneously.
+- **Description**: Checks the physical asynchronous state of a modifier key using `GetAsyncKeyState()`, evaluating generic and left/right variants simultaneously.
 - **Called By**: [`LowLevelKeyboardProc`](#lowlevelkeyboardproc)
 - **Calls**: Win32 `GetAsyncKeyState`.
 
@@ -295,7 +322,7 @@ Below is the complete catalog of every function in the project, categorized by s
 - **Signature**: `void send_key_event(WORD vk, bool is_down)`
 - **Visibility**: `extern`
 - **Description**: Emits a single key-down or key-up event to the Windows OS input stream via `SendInput()`. Computes the hardware scan code via `MapVirtualKeyW` and tags the event with `MAGIC_INJECTED_FLAG`.
-- **Called By**: [`release_injected_keys`](#release_injected_keys), [`LowLevelKeyboardProc`](#lowlevelkeyboardproc)
+- **Called By**: [`release_injected_keys`](#release_injected_keys), [`handle_key_remap`](#handle_key_remap), [`hook_set_paused`](#hook_set_paused), [`hook_uninstall`](#hook_uninstall), [`LowLevelKeyboardProc`](#lowlevelkeyboardproc)
 - **Calls**: Win32 `MapVirtualKeyW`, [`is_extended_key`](#is_extended_key), Win32 `SendInput`.
 
 #### `send_key_tap`
@@ -358,19 +385,26 @@ Below is the complete catalog of every function in the project, categorized by s
 - **Called By**: [`config_load_from_json_string`](#config_load_from_json_string)
 - **Calls**: `memset`, `strncpy_s`, `strtok_s`, `isspace`, `strlen`, [`key_name_to_vk`](#key_name_to_vk), [`is_modifier_key`](#is_modifier_key).
 
+#### `parse_remap_pairs`
+- **Signature**: `static void parse_remap_pairs(const jnode_t *obj, WORD remap_map[256], bool check_known)`
+- **Visibility**: `static`
+- **Description**: Iterates through key-value pairs in a JSON object and maps source Virtual Key codes to target Virtual Key codes in `remap_map`. When `check_known` is enabled, filters out standard setting section names.
+- **Called By**: [`config_load_from_json_string`](#config_load_from_json_string)
+- **Calls**: [`key_name_to_vk`](#key_name_to_vk), `_stricmp`.
+
 #### `config_init_defaults`
 - **Signature**: `void config_init_defaults(capslayer_config_t *cfg)`
 - **Visibility**: `extern`
-- **Description**: Initializes configuration structure with built-in default settings (`capslock_tap_as_esc = true`, `unmapped_passthrough = true`, `I/J/K/L -> Up/Left/Down/Right`, `H/;/U/D -> Home/End/PgUp/PgDn`, `M/N -> Del/Bksp`, `P -> toggle_persistent`, `W -> Alt+F4`, `C/V -> Ctrl+C/Ctrl+V`, `Z -> wt.exe`).
+- **Description**: Initializes configuration structure with built-in default settings (`modifier_vk = VK_CAPITAL`, `capslock_tap_as_esc = true`, `esc_tap_as_capslock = true`, `unmapped_passthrough = true`, `I/J/K/L -> Up/Left/Down/Right`, `H/;/U/D -> Home/End/PgUp/PgDn`, `M/N -> Del/Bksp`, `P -> toggle_persistent`, `W -> Alt+F4`, `C/V -> Ctrl+C/Ctrl+V`, `Z -> wt.exe`).
 - **Called By**: [`config_load_from_json_string`](#config_load_from_json_string), [`reload_config`](#reload_config), [`test_config_defaults`](#test_config_defaults), [`test_hook_state_management`](#test_hook_state_management)
 - **Calls**: `memset`, [`key_name_to_vk`](#key_name_to_vk), `strncpy_s`.
 
 #### `config_load_from_json_string`
 - **Signature**: `bool config_load_from_json_string(const char *json_str, capslayer_config_t *cfg)`
 - **Visibility**: `extern`
-- **Description**: Parses a JSON configuration string into `capslayer_config_t`. Overrides defaults with custom settings, layer bindings, and global shortcuts.
-- **Called By**: [`config_load_from_file`](#config_load_from_file), [`test_config_json_parsing`](#test_config_json_parsing)
-- **Calls**: [`parse_val`](#parse_val), [`jnode_free`](#jnode_free), [`config_init_defaults`](#config_init_defaults), [`jget`](#jget), [`jget_bool`](#jget_bool), [`jget_str`](#jget_str), [`key_name_to_vk`](#key_name_to_vk), [`parse_layer_action_node`](#parse_layer_action_node), [`parse_shortcut_combo`](#parse_shortcut_combo), [`is_modifier_key`](#is_modifier_key).
+- **Description**: Parses a JSON configuration string into `capslayer_config_t`. Overrides defaults with custom settings, layer bindings, global shortcuts, modifier key selections, and direct remap tables.
+- **Called By**: [`config_load_from_file`](#config_load_from_file), [`test_config_json_parsing`](#test_config_json_parsing), [`test_capslock_esc_remapping`](#test_capslock_esc_remapping)
+- **Calls**: [`parse_val`](#parse_val), [`jnode_free`](#jnode_free), [`config_init_defaults`](#config_init_defaults), [`jget`](#jget), [`jget_bool`](#jget_bool), [`jget_str`](#jget_str), [`key_name_to_vk`](#key_name_to_vk), [`parse_remap_pairs`](#parse_remap_pairs), [`parse_layer_action_node`](#parse_layer_action_node), [`parse_shortcut_combo`](#parse_shortcut_combo), [`is_modifier_key`](#is_modifier_key).
 
 #### `config_load_from_file`
 - **Signature**: `bool config_load_from_file(const char *path, capslayer_config_t *cfg)`
@@ -401,21 +435,14 @@ Below is the complete catalog of every function in the project, categorized by s
 - **Signature**: `static void init_cs_once(void)`
 - **Visibility**: `static`
 - **Description**: Thread-safe initialization of the Win32 `CRITICAL_SECTION` protecting active configuration reads/writes.
-- **Called By**: [`hook_update_config`](#hook_update_config), [`get_config_snapshot`](#get_config_snapshot), [`hook_install`](#hook_install)
+- **Called By**: [`hook_update_config`](#hook_update_config), [`hook_install`](#hook_install)
 - **Calls**: Win32 `InitializeCriticalSection`.
 
 #### `hook_update_config`
 - **Signature**: `void hook_update_config(const capslayer_config_t *cfg)`
 - **Visibility**: `extern`
 - **Description**: Thread-safely replaces the runtime active configuration inside the critical section.
-- **Called By**: [`reload_config`](#reload_config), [`test_hook_state_management`](#test_hook_state_management)
-- **Calls**: [`init_cs_once`](#init_cs_once), Win32 `EnterCriticalSection`, Win32 `LeaveCriticalSection`.
-
-#### `get_config_snapshot`
-- **Signature**: `static void get_config_snapshot(capslayer_config_t *out)`
-- **Visibility**: `static`
-- **Description**: Takes a thread-safe snapshot copy of the active configuration to prevent data races while processing hook events.
-- **Called By**: [`LowLevelKeyboardProc`](#lowlevelkeyboardproc)
+- **Called By**: [`reload_config`](#reload_config), [`test_hook_state_management`](#test_hook_state_management), [`test_capslock_esc_remapping`](#test_capslock_esc_remapping), [`test_modifier_tap_vs_hold`](#test_modifier_tap_vs_hold)
 - **Calls**: [`init_cs_once`](#init_cs_once), Win32 `EnterCriticalSection`, Win32 `LeaveCriticalSection`.
 
 #### `hook_is_installed`
@@ -435,7 +462,7 @@ Below is the complete catalog of every function in the project, categorized by s
 #### `hook_is_persistent_layer`
 - **Signature**: `bool hook_is_persistent_layer(void)`
 - **Visibility**: `extern`
-- **Description**: Queries whether Persistent Layer Lock mode (`Caps + P`) is currently engaged.
+- **Description**: Queries whether Persistent Layer Lock mode (`Mod + P`) is currently engaged.
 - **Called By**: [`tray_show_menu`](#tray_show_menu), [`MainWndProc`](#mainwndproc), [`test_hook_state_management`](#test_hook_state_management)
 - **Calls**: None.
 
@@ -470,9 +497,9 @@ Below is the complete catalog of every function in the project, categorized by s
 #### `hook_set_paused`
 - **Signature**: `void hook_set_paused(bool paused)`
 - **Visibility**: `extern`
-- **Description**: Pauses or resumes CapsLayer remapping. When paused, stops the LED blinker, releases held synthetic keys, and fires the state change callback.
+- **Description**: Pauses or resumes CapsLayer remapping. When paused, stops the LED blinker, releases held synthetic keys, resets any active passthrough modifier states, and fires the state change callback.
 - **Called By**: [`MainWndProc`](#mainwndproc), [`main`](#main), [`test_hook_state_management`](#test_hook_state_management)
-- **Calls**: [`stop_blinker`](#stop_blinker), [`release_injected_keys`](#release_injected_keys), callback `g_state_cb`.
+- **Calls**: [`stop_blinker`](#stop_blinker), [`release_injected_keys`](#release_injected_keys), [`send_key_event`](#send_key_event), callback `g_state_cb`.
 
 #### `hook_set_persistent_layer`
 - **Signature**: `void hook_set_persistent_layer(bool active)`
@@ -495,17 +522,25 @@ Below is the complete catalog of every function in the project, categorized by s
 - **Called By**: [`main`](#main), [`test_hook_state_management`](#test_hook_state_management)
 - **Calls**: None.
 
+#### `handle_key_remap`
+- **Signature**: `static inline bool handle_key_remap(WORD vk, bool is_down, bool is_up, WORD tgt)`
+- **Visibility**: `static inline`
+- **Description**: Tracks synthetic key state in `g_active_injected[vk]` and emits key-down/key-up events for target Virtual Key codes.
+- **Called By**: [`LowLevelKeyboardProc`](#lowlevelkeyboardproc)
+- **Calls**: [`send_key_event`](#send_key_event).
+
 #### `LowLevelKeyboardProc`
 - **Signature**: `LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam)`
 - **Visibility**: `extern`
 - **Description**: The core low-level Windows keyboard hook callback (`WH_KEYBOARD_LL`). Intercepts hardware keystrokes before any application sees them:
-  1. Filters injected events to prevent infinite loops.
+  1. Filters injected events (`MAGIC_INJECTED_FLAG` / `LLKHF_INJECTED`) and paused state.
   2. Evaluates global shortcuts (e.g. `Win+Alt+Esc`).
-  3. Manages physical Escape remapping / persistent layer exit.
-  4. Manages physical CapsLock press/release (tracks hold vs tap for dual-role Escape).
-  5. Translates layer keys (e.g. `I/J/K/L -> Up/Left/Down/Right`) and tracks active keys to guarantee clean key-up delivery.
-- **Called By**: Windows OS Hook Subsystem, [`test_hook_state_management`](#test_hook_state_management)
-- **Calls**: Win32 `CallNextHookEx`, [`get_config_snapshot`](#get_config_snapshot), [`is_modifier_down`](#is_modifier_down), [`spawn_process_async`](#spawn_process_async), [`send_key_combo`](#send_key_combo), [`send_key_tap`](#send_key_tap), [`hook_toggle_persistent_layer`](#hook_toggle_persistent_layer), [`hook_set_persistent_layer`](#hook_set_persistent_layer), [`release_injected_keys`](#release_injected_keys), [`send_key_event`](#send_key_event).
+  3. Manages physical layer modifier key press/release (tracks hold vs tap for dual-role Escape or custom tap action).
+  4. Manages layer navigation actions (`I/J/K/L -> Up/Left/Down/Right`, combos, execs) and persistent layer lock.
+  5. Provides transparent modifier passthrough for unmapped keys held with modifier keys.
+  6. Applies 1-to-1 key mappings from `remap_map` in normal typing mode.
+- **Called By**: Windows OS Hook Subsystem, [`test_hook_state_management`](#test_hook_state_management), [`test_capslock_esc_remapping`](#test_capslock_esc_remapping), [`test_modifier_tap_vs_hold`](#test_modifier_tap_vs_hold)
+- **Calls**: Win32 `CallNextHookEx`, [`is_modifier_match`](#is_modifier_match), [`is_modifier_down`](#is_modifier_down), [`spawn_process_async`](#spawn_process_async), [`send_key_combo`](#send_key_combo), [`send_key_tap`](#send_key_tap), [`hook_toggle_persistent_layer`](#hook_toggle_persistent_layer), [`hook_set_persistent_layer`](#hook_set_persistent_layer), [`release_injected_keys`](#release_injected_keys), [`handle_key_remap`](#handle_key_remap), [`send_key_event`](#send_key_event), [`is_modifier_key`](#is_modifier_key).
 
 #### `hook_install`
 - **Signature**: `bool hook_install(HINSTANCE hInstance)`
@@ -517,9 +552,9 @@ Below is the complete catalog of every function in the project, categorized by s
 #### `hook_uninstall`
 - **Signature**: `void hook_uninstall(void)`
 - **Visibility**: `extern`
-- **Description**: Removes the global low-level keyboard hook via `UnhookWindowsHookEx`, stops the LED blinker, and releases any held keys.
+- **Description**: Removes the global low-level keyboard hook via `UnhookWindowsHookEx`, stops the LED blinker, closes synchronization handles, releases held synthetic keys, and deletes the configuration critical section.
 - **Called By**: [`main`](#main)
-- **Calls**: [`stop_blinker`](#stop_blinker), Win32 `UnhookWindowsHookEx`, [`release_injected_keys`](#release_injected_keys).
+- **Calls**: [`stop_blinker`](#stop_blinker), Win32 `CloseHandle`, Win32 `UnhookWindowsHookEx`, [`release_injected_keys`](#release_injected_keys), [`send_key_event`](#send_key_event), Win32 `DeleteCriticalSection`.
 
 ---
 
@@ -667,7 +702,7 @@ Below is the complete catalog of every function in the project, categorized by s
 - **Visibility**: `extern` (Entry Point)
 - **Description**: Main application entry point. Parses CLI flags (`--install`, `--uninstall`, `--status`, `--test-config`, `--console`, `--paused`, etc.), ensures single-instance mutex, creates message window, initializes tray icon, installs keyboard hook, starts config watcher thread, and runs the Win32 message loop.
 - **Called By**: [`WinMain`](#winmain), C Runtime Startup
-- **Calls**: [`attach_console`](#attach_console), `memset`, [`config_get_default_path`](#config_get_default_path), `strcmp`, `printf`, [`config_get_dir_path`](#config_get_dir_path), [`config_load_from_file`](#config_load_from_file), [`get_prog_files`](#get_prog_files), `swprintf_s`, `GetFileAttributesW`, [`run_cmd_hidden`](#run_cmd_hidden), [`is_admin`](#is_admin), [`relaunch_admin`](#relaunch_admin), [`setup_install`](#setup_install), [`setup_uninstall`](#setup_uninstall), [`setup_enable_startup`](#setup_enable_startup), [`setup_disable_startup`](#setup_disable_startup), Win32 `CreateMutexW`, `GetLastError`, `CloseHandle`, `GetModuleHandle`, `RegisterClassExW`, `CreateWindowExW`, [`reload_config`](#reload_config), [`tray_init`](#tray_init), [`hook_set_paused`](#hook_set_paused), [`tray_update_status`](#tray_update_status), [`hook_set_state_callback`](#hook_set_state_callback), [`hook_install`](#hook_install), [`tray_cleanup`](#tray_cleanup), `DestroyWindow`, `UnregisterClassW`, `CreateEventW`, `_beginthreadex` (spawns [`config_watcher`](#config_watcher)), `GetMessageW`, `TranslateMessage`, `DispatchMessageW`, `SetEvent`, `WaitForSingleObject`, [`hook_uninstall`](#hook_uninstall), `ReleaseMutex`.
+- **Calls**: [`attach_console`](#attach_console), `memset`, [`config_get_default_path`](#config_get_default_path), `strcmp`, `printf`, [`config_get_dir_path`](#config_get_dir_path), [`config_load_from_file`](#config_load_from_file), [`get_prog_files`](#get_prog_files), `swprintf_s`, `GetFileAttributesW`, [`run_cmd_hidden`](#run_cmd_hidden), [`is_admin`](#is_admin), [`relaunch_admin`](#relaunch_admin), [`setup_install`](#setup_install), [`setup_uninstall`](#setup_uninstall), [`setup_enable_startup`](#setup_enable_startup), [`setup_disable_startup`](#setup_disable_startup), Win32 `CreateMutexW`, `GetLastError`, `CloseHandle`, `GetModuleHandle`, `RegisterClassExW`, `CreateWindowExW`, [`reload_config`](#reload_config), [`tray_init`](#tray_init), [`hook_set_paused`](#hook_set_paused), [`hook_set_state_callback`](#hook_set_state_callback), [`hook_install`](#hook_install), `_beginthreadex` (spawns [`config_watcher`](#config_watcher)), `GetMessageW`, `TranslateMessage`, `DispatchMessageW`, [`hook_uninstall`](#hook_uninstall), [`tray_cleanup`](#tray_cleanup).
 
 #### `WinMain`
 - **Signature**: `int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR lpCmd, int nShow)`
@@ -680,11 +715,11 @@ Below is the complete catalog of every function in the project, categorized by s
 
 ### 4.7 Unit Test Suite Functions
 
-Defined in `tests/test_capslayer.c`:
+Defined in `tests/test_capslayer.c` (187 test assertions across 9 test modules):
 
 #### `test_key_name_to_vk`
 - **Signature**: `static void test_key_name_to_vk(void)`
-- **Description**: Tests key name resolution for alphanumeric keys, arrows, function keys `F1-F24`, modifiers, punctuation, and aliases.
+- **Description**: Tests key name resolution for alphanumeric keys, arrows, function keys `F1-F24`, modifiers (including left/right and aliases like `ralt`, `lalt`, `rctrl`, `lctrl`, `super`), punctuation, and error handling for invalid strings.
 - **Calls**: [`key_name_to_vk`](#key_name_to_vk), `printf`, `fflush`.
 
 #### `test_is_extended_key`
@@ -694,12 +729,12 @@ Defined in `tests/test_capslayer.c`:
 
 #### `test_config_defaults`
 - **Signature**: `static void test_config_defaults(void)`
-- **Description**: Validates that default settings and layer bindings match expected initial states.
+- **Description**: Validates that default settings, modifier keys, and layer bindings match expected initial states.
 - **Calls**: [`config_init_defaults`](#config_init_defaults), [`key_name_to_vk`](#key_name_to_vk), `printf`, `fflush`.
 
 #### `test_config_json_parsing`
 - **Signature**: `static void test_config_json_parsing(void)`
-- **Description**: Validates JSON parser against complex configurations, actions, global shortcuts, and malformed strings.
+- **Description**: Validates JSON parser against complex configurations, actions, modifier settings, global shortcuts, and malformed strings.
 - **Calls**: [`config_load_from_json_string`](#config_load_from_json_string), [`key_name_to_vk`](#key_name_to_vk), `printf`, `fflush`.
 
 #### `test_config_file_loading`
@@ -714,8 +749,18 @@ Defined in `tests/test_capslayer.c`:
 
 #### `test_hook_state_management`
 - **Signature**: `static void test_hook_state_management(void)`
-- **Description**: Verifies pause state transitions, persistent lock toggles, state callbacks, and simulated hook procedure event processing.
+- **Description**: Verifies pause state transitions, persistent lock toggles, state callbacks, custom modifier keys (`Right Alt`), and simulated hook procedure event processing.
 - **Calls**: [`config_init_defaults`](#config_init_defaults), [`hook_update_config`](#hook_update_config), [`hook_is_paused`](#hook_is_paused), [`hook_set_paused`](#hook_set_paused), [`hook_set_state_callback`](#hook_set_state_callback), [`hook_is_persistent_layer`](#hook_is_persistent_layer), [`hook_set_persistent_layer`](#hook_set_persistent_layer), [`LowLevelKeyboardProc`](#lowlevelkeyboardproc), [`hook_toggle_persistent_layer`](#hook_toggle_persistent_layer), `printf`, `fflush`.
+
+#### `test_capslock_esc_remapping`
+- **Signature**: `static void test_capslock_esc_remapping(void)`
+- **Description**: Verifies all forms of key remapping: `"remap"` blocks, `"settings"` direct remap pairs, `swap_esc_and_capslock`, tap flags with custom modifiers, layer-nested remaps, and top-level remaps.
+- **Calls**: [`config_load_from_json_string`](#config_load_from_json_string), [`hook_update_config`](#hook_update_config), [`LowLevelKeyboardProc`](#lowlevelkeyboardproc), `printf`, `fflush`.
+
+#### `test_modifier_tap_vs_hold`
+- **Signature**: `static void test_modifier_tap_vs_hold(void)`
+- **Description**: Tests modifier tap vs hold dynamics under simulated hook input: isolated modifier tap detection, modifier held with layer keys, and modifier held with unmapped keys (passthrough behavior).
+- **Calls**: [`config_init_defaults`](#config_init_defaults), [`hook_update_config`](#hook_update_config), [`LowLevelKeyboardProc`](#lowlevelkeyboardproc), `printf`, `fflush`.
 
 ---
 
@@ -760,25 +805,32 @@ The setup script handles deployment to `%ProgramFiles(x86)%\capslayer`:
 1. Auto-elevates to Administrator.
 2. Terminates running `capslayer.exe` processes.
 3. Deletes Task Scheduler task `CapsLayer`.
-4. Removes Start Menu shortcuts.
-5. Recursively deletes the installation folder (`rmdir /S /Q "%TARGET_DIR%"`).
+4. Removes Start Menu and Startup folder shortcuts.
+5. Removes legacy Run registry entries.
+6. Recursively deletes the installation folder (`rmdir /S /Q "%TARGET_DIR%"`).
 ```
 
 ---
 
 ## 6. Configuration Reference (`config.json`)
 
-`config.json` allows full customization of settings, layer remappings, and global hotkeys:
+`config.json` allows full customization of settings, modifier keys, direct remap tables, layer remappings, and global hotkeys:
 
 ```json
 {
   "settings": {
+    "modifier_key": "capslock",
     "capslock_tap_as_esc": true,
     "esc_tap_as_capslock": true,
     "swap_esc_and_capslock": false,
+    "modifier_tap_as_esc": false,
     "unmapped_passthrough": true,
     "show_tray_icon": true,
     "start_minimized": false
+  },
+  "remap": {
+    "capslock": "esc",
+    "esc": "capslock"
   },
   "layer": {
     "i": "up",
@@ -817,7 +869,7 @@ The setup script handles deployment to `%ProgramFiles(x86)%\capslayer`:
 
 1. **Simple Key Remapping**: `"i": "up"`, `"m": "delete"`
 2. **Key Combinations**: `"w": ["alt", "f4"]`, `"c": "ctrl+c"`
-3. **Command Execution**: `"z": { "action": "exec", "command": "wt.exe" }`
+3. **Command Execution**: `"z": { "action": "exec", "command": "wt.exe" }` (or shorthand `"z": "wt.exe"`)
 4. **Layer Lock Toggle**: `"p": "toggle_persistent"`
 
 ---

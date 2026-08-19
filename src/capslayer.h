@@ -23,8 +23,7 @@ extern "C" {
 
 #define WM_TRAYICON            (WM_USER + 1)
 #define WM_USER_RELOAD_CONFIG  (WM_USER + 2)
-#define WM_USER_TOGGLE_PAUSE   (WM_USER + 3)
-#define WM_USER_STATE_CHANGED  (WM_USER + 4)
+#define WM_USER_STATE_CHANGED  (WM_USER + 3)
 
 #define IDM_STATUS             1001
 #define IDM_TOGGLE_ENABLE      1002
