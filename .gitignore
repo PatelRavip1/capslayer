@@ -1,0 +1,4 @@
+*.pdb
+*.res
+test_capslayer.exe
+test_capslayer.pdb

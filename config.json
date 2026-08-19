@@ -1,0 +1,41 @@
+{
+  "settings": {
+    "capslock_tap_as_esc": true,
+    "esc_tap_as_capslock": true,
+    "swap_esc_and_capslock": false,
+    "unmapped_passthrough": true,
+    "show_tray_icon": true,
+    "start_minimized": false
+  },
+  "layer": {
+    "i": "up",
+    "j": "left",
+    "k": "down",
+    "l": "right",
+    "h": "home",
+    ";": "end",
+    "u": "pageup",
+    "d": "pagedown",
+    "backspace": "delete",
+    "m": "delete",
+    "n": "backspace",
+    "p": "toggle_persistent",
+    "w": ["alt", "f4"],
+    "c": ["ctrl", "c"],
+    "v": ["ctrl", "v"],
+    "z": {
+      "action": "exec",
+      "command": "wt.exe"
+    }
+  },
+  "shortcuts": {
+    "win+alt+capslock": {
+      "action": "exec",
+      "command": "C:\\Windows\\System32\\shutdown.exe /s /t 0"
+    },
+    "win+shift+i": {
+      "action": "exec",
+      "command": "wt.exe"
+    }
+  }
+}
