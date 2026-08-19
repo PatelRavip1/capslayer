@@ -4,9 +4,7 @@
 #include <string.h>
 #include <assert.h>
 
-#include "keys.h"
-#include "config.h"
-#include "hook.h"
+#include "capslayer.h"
 
 static int g_tests_run = 0;
 static int g_tests_passed = 0;
@@ -16,11 +14,12 @@ static int g_tests_passed = 0;
     if (expr) { \
         g_tests_passed++; \
         printf("  [PASS] %s\n", msg); \
+        fflush(stdout); \
     } else { \
         printf("  [FAIL] %s (Line %d: %s)\n", msg, __LINE__, #expr); \
+        fflush(stdout); \
     } \
 } while (0)
-
 static void test_key_name_to_vk(void)
 {
     printf("\n=== Testing key_name_to_vk ===\n");

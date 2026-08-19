@@ -117,17 +117,13 @@ It transforms the **CapsLock** key into a dual-role key:
 ## Installation & Setup
 
 ### Automated Setup
-Run `setup.bat` (or `install.bat`) in Command Prompt, or run `setup.ps1` in PowerShell (automatically requests Administrator elevation if not already elevated):
+Run `setup.bat` (automatically requests Administrator elevation if not already elevated):
 ```cmd
 setup.bat
 ```
-Or via PowerShell:
-```powershell
-.\setup.ps1
-```
 
 This will automatically:
-1. Copy `capslayer.exe`, `config.json` (preserves existing if present), and `uninstall.bat` to `C:\Program Files (x86)\capslayer`.
+1. Copy `capslayer.exe`, `config.json` (preserves existing if present), `setup.bat`, and `uninstall.bat` to `C:\Program Files (x86)\capslayer`.
 2. Configure file and folder permissions (`icacls` / ACL) so standard users can edit `config.json` without requiring administrator privileges.
 3. Register a Windows Task Scheduler task (`CapsLayer`) to start elevated on user logon with **zero UAC prompts**.
 4. Clean up any legacy registry Run entries or Startup folder shortcuts to avoid duplicate launches.
@@ -135,7 +131,7 @@ This will automatically:
 6. Launch the daemon in the background.
 
 ### Uninstallation
-Run `uninstall.bat` as Administrator:
+Run `uninstall.bat` (or `setup.bat /u`):
 ```cmd
 uninstall.bat
 ```
@@ -143,8 +139,7 @@ Or via CLI:
 ```cmd
 capslayer.exe --uninstall
 ```
-This stops running processes, removes the Task Scheduler startup task, cleans Start Menu shortcuts and registry entries, and removes the installation folder.
-
+This stops running processes, removes the Task Scheduler startup task, cleans Start Menu and Startup shortcuts, removes registry entries, and removes the installation folder.
 ## CLI Reference
 
 ```text
@@ -174,22 +169,19 @@ Options:
 ### Using Zig C Compiler
 ```powershell
 # 1. Compile resource manifest
-cd res
-zig rc /fo resource.res resource.rc
-cd ..
+zig rc /fo res/resource.res res/resource.rc
 
 # 2. Build CapsLayer executable
 zig cc -O2 '-Wl,--subsystem,windows' -Isrc -D_CRT_SECURE_NO_WARNINGS `
-  src/main.c src/keys.c src/hook.c src/config.c src/tray.c src/cJSON.c res/resource.res `
+  src/capslayer.c res/resource.res `
   -luser32 -lshell32 -ladvapi32 -lgdi32 -lole32 -o capslayer.exe
 
 # 3. Build and run unit tests
-zig cc -O2 -Isrc -D_CRT_SECURE_NO_WARNINGS `
-  tests/test_capslayer.c src/keys.c src/config.c src/hook.c src/cJSON.c `
+zig cc -O2 -Isrc -DCAPSLAYER_NO_MAIN -D_CRT_SECURE_NO_WARNINGS `
+  tests/test_capslayer.c src/capslayer.c `
   -luser32 -lshell32 -ladvapi32 -lgdi32 -lole32 -o test_capslayer.exe
 .\test_capslayer.exe
 ```
-
 ---
 
 ## License
